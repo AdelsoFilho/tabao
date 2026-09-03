@@ -71,20 +71,11 @@
 
 {% if not total_locais %}
   <div style="padding:20px 16px">
-    <h1>Mercados perto de você</h1>
-    <p class="sub">Importe os mercados da sua região para começar.</p>
-    <div class="cartao">
-      <form method="post" action="{{ url_for('importar_mapa') }}">
-        <div class="campo">
-          <label for="area">Sua cidade ou bairro</label>
-          <input type="text" id="area" name="area" placeholder="Ex.: Setor Bueno, Goiânia" required>
-        </div>
-        <button class="botao grande" type="submit">Importar do OpenStreetMap</button>
-      </form>
-      <p style="font-size:12.5px;color:var(--suave);margin:14px 0 0">
-        Dados do OpenStreetMap, gratuito e mantido pela comunidade.
-      </p>
-    </div>
+    <h1>Mapa indisponível</h1>
+    <p class="sub">
+      Não consegui carregar os mercados agora. Tente recarregar a página.
+    </p>
+    <a class="botao" href="{{ url_for('precos') }}">Ver os preços</a>
   </div>
 {% else %}
 

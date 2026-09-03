@@ -477,3 +477,54 @@ def test_mad_zero_ainda_detecta_absurdo():
 def test_valores_todos_identicos_sinalizam_diferente():
     assert est.e_atipico(9.00, [10.0, 10.0, 10.0])
     assert not est.e_atipico(10.0, [10.0, 10.0, 10.0])
+
+
+# --------------------------------------------------------------------------
+# Fluxo sem estado (necessário em hospedagem serverless)
+# --------------------------------------------------------------------------
+
+def test_cupom_sobrevive_a_ida_e_volta_em_dicionario(cupom_real):
+    """O cupom precisa ser serializável para viajar no formulário."""
+    from tabao.modelos import Cupom
+
+    volta = Cupom.de_dicionario(cupom_real.para_dicionario())
+    assert len(volta.itens) == len(cupom_real.itens)
+    assert volta.total_calculado == cupom_real.total_calculado
+    assert volta.estabelecimento.cnpj == cupom_real.estabelecimento.cnpj
+    assert volta.emitido_em == cupom_real.emitido_em
+
+
+def test_token_assinado_devolve_o_mesmo_cupom(cupom_real):
+    import app as aplicacao
+
+    token = aplicacao.empacotar_cupom(cupom_real)
+    volta = aplicacao.desempacotar_cupom(token)
+    assert volta is not None
+    assert volta.chave == cupom_real.chave
+    assert len(volta.itens) == len(cupom_real.itens)
+
+
+def test_token_adulterado_e_recusado(cupom_real):
+    """
+    Sem a assinatura, alguém poderia editar os preços entre a conferência e a
+    confirmação e envenenar a base colaborativa.
+    """
+    import app as aplicacao
+
+    token = aplicacao.empacotar_cupom(cupom_real)
+    assert aplicacao.desempacotar_cupom(token[:-6] + "AAAAAA") is None
+    assert aplicacao.desempacotar_cupom("qualquer-coisa") is None
+    assert aplicacao.desempacotar_cupom("") is None
+
+
+def test_mapa_usa_os_mercados_embarcados(tmp_path):
+    """
+    Em produção o disco é efêmero: sem o arquivo versionado, o mapa nasceria
+    vazio e o app voltaria a pedir a cidade.
+    """
+    from tabao.mapa import CacheMapa
+
+    cache = CacheMapa(tmp_path / "nao-existe.json")
+    assert len(cache.locais) > 100
+    assert cache.area == "Goiânia"
+    assert cache.centro is not None

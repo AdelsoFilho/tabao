@@ -46,7 +46,9 @@
   {% endfor %}
 </div>
 
-<form method="post" action="{{ url_for('confirmar', chave=cupom.chave) }}">
+<form method="post" action="{{ url_for('confirmar') }}">
+  <!-- O cupom viaja assinado: nada é guardado no servidor entre as telas. -->
+  <input type="hidden" name="cupom" value="{{ token }}">
   <button class="botao grande" type="submit">Está correto — adicionar</button>
 </form>
 <p style="text-align:center;margin-top:14px">

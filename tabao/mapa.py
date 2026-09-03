@@ -385,6 +385,15 @@ def casar_com_estabelecimentos(locais: list[Local],
 # Cache em disco
 # --------------------------------------------------------------------------
 
+# Mercados de Goiânia versionados junto com o código.
+#
+# São dados de referência, não dados de usuário: mudam raramente e podem ser
+# regerados com "cli.py mapear". Ficam no repositório porque a hospedagem
+# gratuita apaga o disco a cada reinício — sem isso, o mapa nasceria vazio em
+# produção e o app pediria a cidade a cada visita.
+DADOS_EMBARCADOS = Path(__file__).resolve().parent.parent / "dados_iniciais" / "mercados_goiania.json"
+
+
 class CacheMapa:
     """Guarda os mercados já encontrados, para não repetir consultas."""
 
@@ -396,10 +405,16 @@ class CacheMapa:
         self.carregar()
 
     def carregar(self) -> None:
-        if not self.caminho.exists():
+        # Uma importação local mais recente tem prioridade sobre o embarcado.
+        origem = self.caminho if self.caminho.exists() else DADOS_EMBARCADOS
+        if not origem.exists():
             return
+        self._ler(origem)
+
+    def _ler(self, origem: Path) -> None:
+        self.caminho_lido = origem
         try:
-            dados = json.loads(self.caminho.read_text(encoding="utf-8"))
+            dados = json.loads(origem.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return
 

@@ -29,9 +29,9 @@ from tabao.chave import ChaveInvalidaError, interpretar
 from tabao.estatistica import DadosInsuficientesError, resumir
 from tabao.produtos import CESTA_BASICA, classificar, nome_do_item
 from tabao.qrcode_nfce import QRCodeInvalidoError, interpretar_url, ler_de_imagem
-from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, importar_area,
-                        locais_dos_estabelecimentos, localizar_estabelecimentos,
-                        mesclar)
+from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimentos,
+                        importar_area, locais_dos_estabelecimentos,
+                        localizar_estabelecimentos, mesclar)
 from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        compensa_ir)
 from tabao.banco import criar_repositorio
@@ -50,9 +50,48 @@ DADOS = Path(os.environ.get("DADOS_DIR", _PADRAO))
 BASE = DADOS / "precos.json"
 MAPA = DADOS / "mapa.json"
 
-# Guarda o último cupom lido, aguardando confirmação do usuário.
-# Em produção isso viria da sessão; no MVP, memória do processo basta.
-_pendentes: dict[str, object] = {}
+# Tempo de vida do cupom lido e ainda não confirmado.
+VALIDADE_CUPOM_SEGUNDOS = 30 * 60
+
+
+def _assinador():
+    """
+    Serializador assinado para o cupom que aguarda confirmação.
+
+    Em hospedagem serverless não existe memória compartilhada entre
+    requisições: cada uma pode cair em outra instância. Por isso o cupom viaja
+    dentro do formulário, e não em um dicionário do processo.
+
+    A assinatura (mesma técnica das sessões do Flask) impede que alguém edite
+    os preços no caminho entre a conferência e a confirmação — o que
+    contaminaria a base colaborativa.
+    """
+    from itsdangerous import URLSafeTimedSerializer
+
+    return URLSafeTimedSerializer(app.secret_key, salt="tabao-cupom")
+
+
+def empacotar_cupom(cupom) -> str:
+    return _assinador().dumps(cupom.para_dicionario())
+
+
+def desempacotar_cupom(token: str):
+    """Devolve o Cupom assinado, ou None se estiver adulterado ou vencido."""
+    from itsdangerous import BadSignature, SignatureExpired
+
+    from tabao.modelos import Cupom
+
+    try:
+        dados = _assinador().loads(token, max_age=VALIDADE_CUPOM_SEGUNDOS)
+    except SignatureExpired:
+        return None
+    except BadSignature:
+        return None
+
+    try:
+        return Cupom.de_dicionario(dados)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def repositorio():
@@ -88,7 +127,7 @@ def filtro_data(valor) -> str:
 @app.context_processor
 def contexto_global():
     """A região importada aparece no topo de todas as telas."""
-    return {"area_atual": CacheMapa(MAPA).area or ""}
+    return {"area_atual": CacheMapa(MAPA).area or "Goiânia"}
 
 
 @app.route("/precos")
@@ -150,18 +189,12 @@ def enviar():
         flash(f"A SEFAZ não devolveu a nota: {erro}", "erro")
         return redirect(url_for("enviar"))
 
-    _pendentes[qr.chave] = cupom
-    return redirect(url_for("conferir", chave=qr.chave))
+    # Renderiza a conferência na mesma requisição: sem redirect, sem estado.
+    return render_template("conferir.html", **contexto_conferencia(cupom))
 
 
-@app.route("/conferir/<chave>")
-def conferir(chave: str):
-    """Tela de confirmação: o usuário só confere, não digita."""
-    cupom = _pendentes.get(chave)
-    if cupom is None:
-        flash("Esse cupom não está mais aguardando confirmação.", "aviso")
-        return redirect(url_for("enviar"))
-
+def contexto_conferencia(cupom) -> dict:
+    """Monta o que a tela de conferência precisa, incluindo o cupom assinado."""
     linhas = []
     for item in cupom.itens:
         classificacao = classificar(item.descricao)
@@ -171,23 +204,30 @@ def conferir(chave: str):
             "cesta": nome_do_item(classificacao.item) if classificacao.item else None,
         })
 
-    return render_template(
-        "conferir.html",
-        cupom=cupom,
-        linhas=linhas,
-        da_cesta=sum(1 for linha in linhas if linha["cesta"]),
-    )
+    return {
+        "cupom": cupom,
+        "linhas": linhas,
+        "da_cesta": sum(1 for linha in linhas if linha["cesta"]),
+        "token": empacotar_cupom(cupom),
+    }
 
 
-@app.route("/confirmar/<chave>", methods=["POST"])
-def confirmar(chave: str):
+@app.route("/confirmar", methods=["POST"])
+def confirmar():
     """Grava na base colaborativa o cupom que o usuário confirmou."""
-    cupom = _pendentes.pop(chave, None)
+    cupom = desempacotar_cupom(request.form.get("cupom", ""))
     if cupom is None:
-        flash("Esse cupom não está mais aguardando confirmação.", "aviso")
+        flash(
+            "A conferência expirou ou os dados foram alterados. "
+            "Envie o cupom de novo.",
+            "aviso",
+        )
         return redirect(url_for("enviar"))
 
     repo = repositorio()
+    if repo.ja_processado(cupom.chave):
+        flash("Este cupom já está na base.", "aviso")
+        return redirect(url_for("precos"))
     gravados = repo.registrar_cupom(cupom)
     repo.salvar()
 
@@ -267,6 +307,10 @@ def inicio():
     """Mapa dos mercados da região, destacando os que já têm preços."""
     cache = CacheMapa(MAPA)
     repo = repositorio()
+
+    # O casamento entre o nome do cupom e o do mapa é feito aqui, e não no
+    # arquivo: assim o dado embarcado continua válido conforme a base cresce.
+    casar_com_estabelecimentos(cache.locais, repo.estabelecimentos())
 
     # Duas fontes: os mercados do OpenStreetMap e os que vieram dos cupons.
     # O OSM não conhece todo supermercado brasileiro, então o endereço da nota

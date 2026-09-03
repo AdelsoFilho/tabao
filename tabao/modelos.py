@@ -103,6 +103,33 @@ class Cupom:
             f"{len(self.itens)} itens | R$ {self.total_calculado:.2f}"
         )
 
+    # ---- serialização ----
+    #
+    # Necessária porque em hospedagem serverless cada requisição pode cair em
+    # uma instância diferente do processo. Guardar o cupom em memória entre a
+    # leitura e a confirmação simplesmente não funciona: a tela de confirmação
+    # cairia em outra instância, que não teria o cupom. Serializado e assinado,
+    # ele viaja com o formulário.
+
+    def para_dicionario(self) -> dict:
+        return {
+            "chave": self.chave,
+            "estabelecimento": asdict(self.estabelecimento),
+            "emitido_em": self.emitido_em.isoformat(),
+            "valor_total": self.valor_total,
+            "itens": [asdict(i) for i in self.itens],
+        }
+
+    @classmethod
+    def de_dicionario(cls, dados: dict) -> "Cupom":
+        return cls(
+            chave=dados["chave"],
+            estabelecimento=Estabelecimento(**dados["estabelecimento"]),
+            emitido_em=datetime.fromisoformat(dados["emitido_em"]),
+            itens=[ItemCupom(**i) for i in dados.get("itens", [])],
+            valor_total=dados.get("valor_total", 0.0),
+        )
+
 
 @dataclass
 class PrecoObservado:

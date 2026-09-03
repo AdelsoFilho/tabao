@@ -89,6 +89,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='vendor/jsQR.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/leitor-qr.js') }}"></script>
 <script>
   const campoFoto = document.getElementById("foto");
   const campoArquivo = document.getElementById("arquivo");
@@ -104,57 +105,36 @@
     area.style.borderColor = cor;
   }
 
-  // Reduz a imagem antes de procurar o código: uma foto de 12 megapixels
-  // trava o aparelho, e o QR Code continua legível bem menor.
-  function paraCanvas(imagem, larguraMaxima) {
-    const escala = Math.min(1, larguraMaxima / imagem.width);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(imagem.width * escala);
-    canvas.height = Math.round(imagem.height * escala);
-    canvas.getContext("2d").drawImage(imagem, 0, 0, canvas.width, canvas.height);
-    return canvas;
-  }
-
-  function procurarQR(imagem) {
-    // Tenta em três tamanhos: fotos de cupom variam muito de enquadramento.
-    for (const largura of [1000, 1600, 700]) {
-      const canvas = paraCanvas(imagem, largura);
-      const dados = canvas.getContext("2d")
-        .getImageData(0, 0, canvas.width, canvas.height);
-      const achado = jsQR(dados.data, dados.width, dados.height,
-                          { inversionAttempts: "attemptBoth" });
-      if (achado && achado.data) return achado.data;
-    }
-    return null;
-  }
-
-  document.getElementById("btn-camera").addEventListener("click", () => campoFoto.click());
-  document.getElementById("btn-galeria").addEventListener("click", () => campoArquivo.click());
+  document.getElementById("btn-camera").addEventListener("click", function () { campoFoto.click(); });
+  document.getElementById("btn-galeria").addEventListener("click", function () { campoArquivo.click(); });
 
   function processarImagem(arquivo) {
-    estado("Lendo o QR Code...", "Isso acontece no seu aparelho", "var(--musgo)");
+    estado("Procurando o QR Code...", "A imagem é lida no seu aparelho", "var(--musgo)");
 
-    const imagem = new Image();
-    imagem.onload = () => {
-      const conteudo = procurarQR(imagem);
-      URL.revokeObjectURL(imagem.src);
-
+    LeitorQR.ler(arquivo, function (etapa, total) {
+      if (total) {
+        estado("Procurando o QR Code...",
+               "Tentativa " + etapa + " de " + total, "var(--musgo)");
+      } else {
+        estado("Procurando o QR Code...",
+               "Varredura detalhada, aguarde um instante", "var(--musgo)");
+      }
+    }).then(function (conteudo) {
       if (conteudo) {
         campoUrl.value = conteudo;
         estado("QR Code lido", "Toque em 'Ler cupom' para continuar", "var(--verde)");
       } else {
         estado("Não encontrei o QR Code",
-               "Tente uma imagem mais nítida, com o código inteiro visível",
+               "Tente enquadrar só o rodapé do cupom, com o código bem visível",
                "var(--acento)");
       }
-    };
-    imagem.onerror = () => estado("Não consegui abrir a imagem",
-                                  "Tente outro arquivo", "var(--acento)");
-    imagem.src = URL.createObjectURL(arquivo);
+    }).catch(function () {
+      estado("Não consegui abrir a imagem", "Tente outro arquivo", "var(--acento)");
+    });
   }
 
-  [campoFoto, campoArquivo].forEach((campo) => {
-    campo.addEventListener("change", () => {
+  [campoFoto, campoArquivo].forEach(function (campo) {
+    campo.addEventListener("change", function () {
       if (campo.files.length) processarImagem(campo.files[0]);
     });
   });

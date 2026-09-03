@@ -21,6 +21,7 @@ const ESSENCIAIS = [
   "/static/manifest.json",
   "/static/vendor/leaflet.js",
   "/static/vendor/jsQR.js",
+  "/static/vendor/leitor-qr.js",
   "/static/vendor/leaflet.css",
   "/static/vendor/marker-icon.png",
   "/static/vendor/marker-icon-2x.png",

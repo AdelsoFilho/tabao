@@ -33,7 +33,7 @@ from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimen
                         importar_area, locais_dos_estabelecimentos,
                         localizar_estabelecimentos, mesclar)
 from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
-                       compensa_ir)
+                       calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import criar_repositorio
 from tabao.repositorio import Repositorio, matriz_precos
 
@@ -282,15 +282,36 @@ def cesta():
     matriz = matriz_precos(repo.precos_da_cesta)
 
     itens = []
+    total_cesta = 0.0
+    itens_com_preco = 0
+
     for chave_item in CESTA_BASICA:
         dados = estatisticas_do_item(repo.precos, chave_item)
-        dados["quantidade"] = CESTA_BASICA[chave_item][1]
+        quantidade = CESTA_BASICA[chave_item][1]
+        dados["quantidade"] = quantidade
         dados["unidade"] = CESTA_BASICA[chave_item][2]
+
+        # Subtotal pela mediana: é a medida menos sensível a um preço atípico.
+        if dados["n"] > 0:
+            dados["subtotal"] = round(dados["mediana"] * quantidade, 2)
+            dados["subtotal_minimo"] = round(dados["minimo"] * quantidade, 2)
+            total_cesta += dados["subtotal"]
+            itens_com_preco += 1
+        else:
+            dados["subtotal"] = None
+            dados["subtotal_minimo"] = None
+
         itens.append(dados)
+
+    total_minimo = sum(i["subtotal_minimo"] or 0 for i in itens)
 
     return render_template(
         "cesta.html",
         itens=itens,
+        total_cesta=round(total_cesta, 2),
+        total_minimo=round(total_minimo, 2),
+        itens_com_preco=itens_com_preco,
+        total_itens_cesta=len(CESTA_BASICA),
         matriz=matriz,
         estabelecimentos=repo.estabelecimentos(),
         nome_item=nome_do_item,
@@ -404,6 +425,40 @@ def api_viabilidade():
         comparacao["alternativa"] = melhor.nome
 
     return jsonify({"resultados": resultados, "comparacao": comparacao})
+
+
+@app.route("/api/rota")
+def api_rota():
+    """
+    Traça a rota de carro entre dois pontos.
+
+    Devolve os pontos do caminho para desenhar no mapa, além de distância,
+    tempo e custo em combustível. A origem vem do aparelho e não é guardada.
+    """
+    try:
+        origem = (float(request.args["de_lat"]), float(request.args["de_lon"]))
+        destino = (float(request.args["para_lat"]), float(request.args["para_lon"]))
+    except (KeyError, ValueError):
+        return jsonify({"erro": "Informe de_lat, de_lon, para_lat e para_lon."}), 400
+
+    try:
+        consumo = float(request.args.get("consumo", CONSUMO_PADRAO_KM_L))
+        preco = float(request.args.get("preco", PRECO_COMBUSTIVEL_PADRAO))
+    except ValueError:
+        return jsonify({"erro": "Consumo e preço devem ser números."}), 400
+    if consumo <= 0:
+        return jsonify({"erro": "O consumo deve ser maior que zero."}), 400
+
+    trajeto = calcular_trajeto(origem, destino, com_desenho=True)
+
+    return jsonify({
+        "distancia_km": trajeto.distancia_km,
+        "duracao_min": trajeto.duracao_min,
+        "ida_e_volta_km": trajeto.ida_e_volta_km,
+        "custo_combustivel": custo_do_trajeto(trajeto.distancia_km, consumo, preco),
+        "rota_real": trajeto.metodo == "ruas",
+        "pontos": trajeto.geometria or [],
+    })
 
 
 @app.route("/mapa/importar", methods=["POST"])

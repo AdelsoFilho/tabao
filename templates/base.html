@@ -93,6 +93,8 @@
   .linha .titulo{font-weight:600;font-size:15px}
   .linha .detalhe{color:var(--suave);font-size:13px;margin-top:2px;
                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Em listas explicativas o texto precisa quebrar, não ser cortado. */
+  .linha .detalhe.completo{white-space:normal;overflow:visible}
   .linha .valor{font-weight:800;font-size:16px;white-space:nowrap;color:var(--verde);
                 font-variant-numeric:tabular-nums;text-align:right}
   .linha .valor small{display:block;font-weight:500;font-size:11.5px;

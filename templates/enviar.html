@@ -3,30 +3,54 @@
 {% block titulo %}Enviar cupom — TáBão{% endblock %}
 {% block conteudo %}
 
-<h1>Fotografe o cupom</h1>
-<p class="sub">Você só tira a foto. O preço é lido da nota, não digitado.</p>
+<h1>Envie o cupom</h1>
+<p class="sub">Você só envia a imagem. O preço é lido da nota, não digitado.</p>
 
 <form method="post" id="form-cupom">
-  <label for="foto" class="cartao" id="area-foto"
-         style="display:flex;flex-direction:column;align-items:center;gap:12px;
-                padding:34px 20px;text-align:center;cursor:pointer;
-                border-style:dashed;border-width:2px;border-color:var(--musgo)">
+  <div class="cartao" id="area-foto"
+       style="display:flex;flex-direction:column;align-items:center;gap:12px;
+              padding:28px 20px 22px;text-align:center;
+              border-style:dashed;border-width:2px;border-color:var(--musgo)">
     <svg viewBox="0 0 24 24" fill="none" stroke="#2C5F2D" stroke-width="1.7"
-         stroke-linecap="round" stroke-linejoin="round" style="width:46px;height:46px">
+         stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px">
       <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
       <circle cx="12" cy="13" r="3.5"/>
     </svg>
     <span style="font-weight:700;font-size:16px;color:var(--verde)" id="rotulo-foto">
-      Tirar foto do cupom
+      Envie o cupom
     </span>
     <span style="color:var(--suave);font-size:13.5px" id="dica-foto">
-      Enquadre o QR Code impresso no rodapé
+      Precisa aparecer o QR Code impresso no rodapé
     </span>
-  </label>
 
-  <!-- A imagem é lida aqui no aparelho e nunca sai dele: o que vai para o
-       servidor é apenas a URL contida no QR Code. -->
+    <div style="display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin-top:4px">
+      <button class="botao" type="button" id="btn-camera"
+              style="padding:12px 20px;font-size:14.5px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">
+          <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
+          <circle cx="12" cy="13" r="3.5"/>
+        </svg>
+        Tirar foto
+      </button>
+      <button class="botao secundario" type="button" id="btn-galeria"
+              style="padding:12px 20px;font-size:14.5px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+        </svg>
+        Galeria ou arquivos
+      </button>
+    </div>
+  </div>
+
+  <!-- Dois campos separados porque o atributo "capture" força a câmera: com
+       ele não dá para escolher da galeria, sem ele não dá para abrir a câmera
+       direto. Ter os dois deixa a escolha com o usuário. -->
   <input type="file" id="foto" accept="image/*" capture="environment"
+         style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+  <input type="file" id="arquivo" accept="image/*"
          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
 
   <details class="cartao" style="margin-top:4px" id="bloco-url">
@@ -53,7 +77,7 @@
       "Os preços entram na base e ajudam toda a comunidade."] %}
     <div class="linha" style="padding:11px 0">
       <span class="medalha">{{ loop.index }}</span>
-      <div class="corpo"><div class="detalhe" style="color:var(--tinta);font-size:14px">
+      <div class="corpo"><div class="detalhe" style="color:var(--tinta);font-size:14px;white-space:normal">
         {{ passo }}
       </div></div>
     </div>
@@ -67,6 +91,7 @@
 <script src="{{ url_for('static', filename='vendor/jsQR.js') }}"></script>
 <script>
   const campoFoto = document.getElementById("foto");
+  const campoArquivo = document.getElementById("arquivo");
   const campoUrl = document.getElementById("campo-url");
   const rotulo = document.getElementById("rotulo-foto");
   const dica = document.getElementById("dica-foto");
@@ -103,8 +128,10 @@
     return null;
   }
 
-  campoFoto.addEventListener("change", () => {
-    if (!campoFoto.files.length) return;
+  document.getElementById("btn-camera").addEventListener("click", () => campoFoto.click());
+  document.getElementById("btn-galeria").addEventListener("click", () => campoArquivo.click());
+
+  function processarImagem(arquivo) {
     estado("Lendo o QR Code...", "Isso acontece no seu aparelho", "var(--musgo)");
 
     const imagem = new Image();
@@ -117,13 +144,19 @@
         estado("QR Code lido", "Toque em 'Ler cupom' para continuar", "var(--verde)");
       } else {
         estado("Não encontrei o QR Code",
-               "Tente uma foto mais nítida, com o código inteiro visível",
+               "Tente uma imagem mais nítida, com o código inteiro visível",
                "var(--acento)");
       }
     };
     imagem.onerror = () => estado("Não consegui abrir a imagem",
-                                  "Tente outra foto", "var(--acento)");
-    imagem.src = URL.createObjectURL(campoFoto.files[0]);
+                                  "Tente outro arquivo", "var(--acento)");
+    imagem.src = URL.createObjectURL(arquivo);
+  }
+
+  [campoFoto, campoArquivo].forEach((campo) => {
+    campo.addEventListener("change", () => {
+      if (campo.files.length) processarImagem(campo.files[0]);
+    });
   });
 
   // A consulta à SEFAZ leva alguns segundos: sem retorno visual o usuário

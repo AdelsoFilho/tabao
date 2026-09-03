@@ -189,29 +189,94 @@
     document.getElementById("cartao-meta").textContent = meta;
 
     const acoes = document.getElementById("cartao-acoes");
-    const destino = local.latitude + "," + local.longitude;
-    const rota = '<a class="botao secundario" style="padding:11px 18px;font-size:14px" ' +
-                 'target="_blank" rel="noopener" ' +
-                 'href="https://www.openstreetmap.org/directions?to=' + destino + '">Traçar rota</a>';
+    const rota = '<button class="botao secundario" type="button" id="btn-rota" ' +
+                 'style="padding:11px 18px;font-size:14px">Traçar rota</button>';
+    const principal = local.cnpj
+      ? '<a class="botao" style="padding:11px 18px;font-size:14px" href="/produtos?q=' +
+        encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>'
+      : '<a class="botao" style="padding:11px 18px;font-size:14px" href="/enviar">Enviar cupom daqui</a>';
 
-    if (local.cnpj) {
-      acoes.innerHTML =
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<a class="botao" style="padding:11px 18px;font-size:14px" href="/produtos?q=' +
-        encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>' + rota + '</div>';
-    } else {
-      acoes.innerHTML =
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<a class="botao" style="padding:11px 18px;font-size:14px" href="/enviar">Enviar cupom daqui</a>' +
-        rota + '</div>';
-    }
+    acoes.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+                      principal + rota + '</div>' +
+                      '<div id="resumo-rota" style="margin-top:11px"></div>';
+
+    document.getElementById("btn-rota")
+            .addEventListener("click", function () { tracarRota(local); });
+
     cartao.classList.add("visivel");
     legenda.style.display = "none";
+  }
+
+  // ---------- traçado da rota até um mercado ----------
+  let camadaRota = null;
+
+  function limparRota() {
+    if (camadaRota) { mapa.removeLayer(camadaRota); camadaRota = null; }
+  }
+
+  function obterMinhaPosicao() {
+    return new Promise(function (resolve, reject) {
+      if (meuPonto) return resolve(meuPonto);
+      if (!navigator.geolocation) return reject();
+      navigator.geolocation.getCurrentPosition(
+        function (p) {
+          meuPonto = [p.coords.latitude, p.coords.longitude];
+          L.circleMarker(meuPonto, {
+            radius: 9, color: "#fff", weight: 3, fillColor: "#1C5D7A", fillOpacity: 1
+          }).addTo(mapa).bindPopup("Você está aqui");
+          resolve(meuPonto);
+        },
+        reject
+      );
+    });
+  }
+
+  function tracarRota(local) {
+    const resumo = document.getElementById("resumo-rota");
+    resumo.innerHTML = '<div style="color:var(--suave);font-size:13px">Calculando a rota...</div>';
+
+    obterMinhaPosicao().then(function (origem) {
+      const p = preferencias();
+      const url = "/api/rota?de_lat=" + origem[0] + "&de_lon=" + origem[1] +
+                  "&para_lat=" + local.latitude + "&para_lon=" + local.longitude +
+                  "&consumo=" + p.consumo + "&preco=" + p.preco;
+
+      fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.erro || !d.pontos || !d.pontos.length) {
+          resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
+                             "Não consegui traçar a rota agora.</div>";
+          return;
+        }
+
+        limparRota();
+        camadaRota = L.polyline(d.pontos, {
+          color: "#1B3A2A", weight: 7, opacity: 0.35
+        }).addTo(mapa);
+        L.polyline(d.pontos, { color: "#3FBF6F", weight: 4 }).addTo(camadaRota);
+        mapa.fitBounds(camadaRota.getBounds().pad(0.15));
+
+        const tempo = d.duracao_min ? Math.round(d.duracao_min) + " min · " : "";
+        resumo.innerHTML =
+          '<div style="background:var(--creme);border-radius:12px;padding:11px 13px;font-size:13.5px">' +
+          "<strong>" + tempo + d.distancia_km + " km</strong>" +
+          (d.rota_real ? "" : " (estimado)") +
+          '<div style="color:var(--suave);font-size:12.5px;margin-top:3px">' +
+          "Ida e volta: " + d.ida_e_volta_km + " km · R$ " +
+          d.custo_combustivel.toFixed(2) + " de combustível</div></div>";
+      }).catch(function () {
+        resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
+                           "Não consegui traçar a rota agora.</div>";
+      });
+    }).catch(function () {
+      resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
+                         "Preciso da sua localização para traçar a rota.</div>";
+    });
   }
 
   function fecharCartao() {
     cartao.classList.remove("visivel");
     legenda.style.display = "flex";
+    limparRota();
   }
   document.getElementById("fechar-cartao").addEventListener("click", fecharCartao);
   mapa.on("click", fecharCartao);

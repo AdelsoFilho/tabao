@@ -46,12 +46,15 @@ class RotaError(RuntimeError):
 
 @dataclass
 class Trajeto:
-    """Distância e tempo entre dois pontos."""
+    """Distância, tempo e, opcionalmente, o desenho da rota."""
 
     distancia_km: float
     duracao_min: Optional[float] = None
     # "ruas" quando veio do roteamento real, "reta" quando é linha reta ajustada.
     metodo: str = "reta"
+    # Pontos (latitude, longitude) para desenhar o caminho no mapa.
+    # Vazio quando só se pediu a distância, para não trafegar dado à toa.
+    geometria: list[tuple[float, float]] = None
 
     @property
     def ida_e_volta_km(self) -> float:
@@ -107,9 +110,13 @@ def trajeto_em_linha_reta(origem: tuple[float, float],
 
 
 def trajeto_por_ruas(origem: tuple[float, float], destino: tuple[float, float],
-                     tempo_limite: int = 20) -> Trajeto:
+                     tempo_limite: int = 20, com_desenho: bool = False) -> Trajeto:
     """
     Calcula a rota real de carro pelo OSRM.
+
+    Com `com_desenho`, traz também a lista de pontos do caminho, para
+    desenhá-lo no mapa. Sem ele, pede só os números — a resposta fica muito
+    menor, o que importa quando se calcula a rota até vários mercados.
 
     O serviço é gratuito e não exige chave. Em caso de falha, levanta
     RotaError para que o chamador use a estimativa em linha reta.
@@ -125,7 +132,10 @@ def trajeto_por_ruas(origem: tuple[float, float], destino: tuple[float, float],
     try:
         resposta = requests.get(
             OSRM.format(coordenadas=coordenadas),
-            params={"overview": "false"},
+            params=(
+                {"overview": "full", "geometries": "geojson"}
+                if com_desenho else {"overview": "false"}
+            ),
             headers=CABECALHOS,
             timeout=tempo_limite,
         )
@@ -144,15 +154,23 @@ def trajeto_por_ruas(origem: tuple[float, float], destino: tuple[float, float],
         raise RotaError("Nenhuma rota encontrada entre os dois pontos.")
 
     rota = dados["routes"][0]
+
+    # O GeoJSON traz [longitude, latitude]; o Leaflet espera o inverso.
+    desenho = None
+    if com_desenho:
+        coordenadas_rota = (rota.get("geometry") or {}).get("coordinates") or []
+        desenho = [(ponto[1], ponto[0]) for ponto in coordenadas_rota]
+
     return Trajeto(
         distancia_km=round(rota["distance"] / 1000, 2),
         duracao_min=round(rota["duration"] / 60, 1),
         metodo="ruas",
+        geometria=desenho,
     )
 
 
 def calcular_trajeto(origem: tuple[float, float], destino: tuple[float, float],
-                     usar_ruas: bool = True) -> Trajeto:
+                     usar_ruas: bool = True, com_desenho: bool = False) -> Trajeto:
     """
     Melhor estimativa disponível: rota por ruas, com linha reta como reserva.
 
@@ -161,10 +179,15 @@ def calcular_trajeto(origem: tuple[float, float], destino: tuple[float, float],
     """
     if usar_ruas:
         try:
-            return trajeto_por_ruas(origem, destino)
+            return trajeto_por_ruas(origem, destino, com_desenho=com_desenho)
         except RotaError:
             pass
-    return trajeto_em_linha_reta(origem, destino)
+
+    trajeto = trajeto_em_linha_reta(origem, destino)
+    if com_desenho:
+        # Sem roteamento, o desenho possível é o segmento entre os dois pontos.
+        trajeto.geometria = [origem, destino]
+    return trajeto
 
 
 def custo_do_trajeto(distancia_km: float, consumo_km_l: float = CONSUMO_PADRAO_KM_L,

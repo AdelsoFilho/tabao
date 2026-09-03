@@ -1,48 +1,103 @@
 {% extends "base.html" %}
 {% set pagina = "cesta" %}
 {% block titulo %}Cesta básica — TáBão{% endblock %}
+
+{% block cabeca %}
+<style>
+  .tabela-cesta{width:100%;border-collapse:collapse;font-size:13.5px}
+  .tabela-cesta th{text-align:left;font-size:10.5px;text-transform:uppercase;
+                   letter-spacing:.6px;color:var(--suave);font-weight:700;
+                   padding:9px 8px;border-bottom:2px solid var(--linha)}
+  .tabela-cesta td{padding:10px 8px;border-bottom:1px solid var(--linha)}
+  .tabela-cesta .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tabela-cesta tbody tr:last-child td{border-bottom:2px solid var(--linha)}
+  .tabela-cesta tfoot td{padding:14px 8px;font-weight:800;font-size:15px;border:none}
+  .tabela-cesta .vazio-td{color:var(--suave);font-style:italic}
+  .rolagem{overflow-x:auto;-webkit-overflow-scrolling:touch}
+</style>
+{% endblock %}
+
 {% block conteudo %}
 
 <h1>Cesta básica</h1>
 <p class="sub">
-  Os treze itens do Decreto-Lei nº 399/1938, acompanhados pelo DIEESE.
-  As quantidades são a referência mensal por adulto.
+  Os treze itens do Decreto-Lei nº 399/1938, nas quantidades mensais de
+  referência por adulto. É a mesma composição que o DIEESE acompanha.
 </p>
 
-<div class="cartao compacto">
-  {% for i in itens %}
-    <div class="linha">
-      <div class="corpo">
-        <div class="titulo">{{ i.nome }}</div>
-        <div class="detalhe">
-          {{ i.quantidade }} {{ i.unidade }} por mês
-          {%- if i.n > 0 %}
-            · {{ i.n }} coleta{{ 's' if i.n > 1 }}
-            {%- if i.n > 1 %} · varia {{ i.variacao_percentual }}%{% endif %}
-          {%- endif %}
-        </div>
-      </div>
-      {% if i.n > 0 %}
-        <div class="valor">
-          R$ {{ i.mediana|reais }}
-          <small>
-            {%- if i.n > 1 -%}
-              de {{ i.minimo|reais }} a {{ i.maximo|reais }}
-            {%- else -%}
-              preço único
-            {%- endif -%}
-          </small>
-        </div>
-      {% else %}
-        <span class="etiqueta">sem coleta</span>
-      {% endif %}
+{% if itens_com_preco %}
+  <div class="destaques">
+    <div class="destaque">
+      <div class="n">R$ {{ total_cesta|reais }}</div>
+      <div class="r">cesta pela mediana dos preços</div>
     </div>
-  {% endfor %}
+    <div class="destaque claro">
+      <div class="n">R$ {{ total_minimo|reais }}</div>
+      <div class="r">comprando tudo pelo menor preço</div>
+    </div>
+    <div class="destaque claro">
+      <div class="n">{{ itens_com_preco }}/{{ total_itens_cesta }}</div>
+      <div class="r">itens já com preço coletado</div>
+    </div>
+  </div>
+
+  {% if itens_com_preco < total_itens_cesta %}
+    <div class="aviso aviso">
+      O total considera apenas
+      {% if itens_com_preco == 1 %}o único item já coletado{% else %}os
+      {{ itens_com_preco }} itens já coletados{% endif %}.
+      Com os {{ total_itens_cesta }} completos, o valor será maior.
+    </div>
+  {% endif %}
+{% endif %}
+
+<h2>Composição da cesta</h2>
+<div class="cartao" style="padding:6px 10px">
+  <div class="rolagem">
+    <table class="tabela-cesta">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="n">Qtd/mês</th>
+          <th class="n">Preço</th>
+          <th class="n">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in itens %}
+          <tr>
+            <td>
+              <strong>{{ i.nome }}</strong>
+              {% if i.n > 1 %}
+                <div style="color:var(--suave);font-size:11.5px;margin-top:2px">
+                  {{ i.n }} coletas · de R$ {{ i.minimo|reais }} a R$ {{ i.maximo|reais }}
+                </div>
+              {% endif %}
+            </td>
+            <td class="n">{{ i.quantidade }} {{ i.unidade }}</td>
+            {% if i.n > 0 %}
+              <td class="n">R$ {{ i.mediana|reais }}</td>
+              <td class="n"><strong>R$ {{ i.subtotal|reais }}</strong></td>
+            {% else %}
+              <td class="n vazio-td" colspan="2">sem coleta</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3">Total da cesta</td>
+          <td class="n" style="color:var(--verde)">R$ {{ total_cesta|reais }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 </div>
 
-<p style="color:var(--suave);font-size:12.5px;margin:6px 2px 0">
-  O valor em destaque é a <strong>mediana</strong> dos preços coletados, menos
-  sensível a um preço fora do padrão que a média.
+<p style="color:var(--suave);font-size:12.5px;margin:4px 2px 0">
+  O preço de cada item é a <strong>mediana</strong> das coletas, menos sensível
+  a um valor fora do padrão que a média. O subtotal multiplica esse preço pela
+  quantidade mensal de referência.
 </p>
 
 {% if matriz %}

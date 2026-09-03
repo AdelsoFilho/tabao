@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% set pagina = "mapa" %}
+{% block titulo %}TáBão — mercados perto de você{% endblock %}
+{% block classe_conteudo %}cheio{% endblock %}
+
+{% block cabeca %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
+  <style>
+    .tela-mapa{position:relative;
+               height:calc(100dvh - 58px - env(safe-area-inset-top) - var(--barra) - env(safe-area-inset-bottom))}
+    #mapa{position:absolute;inset:0;z-index:0;background:#DCE3DA}
+
+    .sobreposicao{position:absolute;top:0;left:0;right:0;z-index:400;padding:12px 14px 0;
+                  pointer-events:none}
+    .sobreposicao > *{pointer-events:auto}
+    .campo-busca{box-shadow:0 4px 16px rgba(27,58,42,.20);margin-bottom:10px}
+    .chip{box-shadow:0 2px 8px rgba(27,58,42,.14)}
+
+    .acoes-mapa{position:absolute;right:14px;bottom:16px;z-index:400;
+                display:flex;flex-direction:column;gap:9px}
+    .acao{width:46px;height:46px;border-radius:50%;background:#fff;border:1px solid var(--linha);
+          display:flex;align-items:center;justify-content:center;
+          box-shadow:0 3px 12px rgba(27,58,42,.20);color:var(--verde)}
+    .acao svg{width:21px;height:21px}
+    .acao.ativo{background:var(--verde);color:#fff;border-color:var(--verde)}
+
+    .cartao-local{position:absolute;left:14px;right:14px;bottom:16px;z-index:401;
+                  background:#fff;border:1px solid var(--linha);border-radius:var(--raio);
+                  padding:15px 17px;box-shadow:0 6px 24px rgba(27,58,42,.22);display:none}
+    .cartao-local.visivel{display:block}
+    .cartao-local .nome{font-weight:800;font-size:16.5px;margin-bottom:2px;padding-right:20px}
+    .cartao-local .meta{color:var(--suave);font-size:13px;margin-bottom:12px}
+    .fechar{position:absolute;top:10px;right:12px;background:none;border:none;
+            color:var(--suave);font-size:22px;line-height:1;padding:4px;cursor:pointer}
+
+    /* Painel "vale a pena": aparece depois que o usuário se localiza. */
+    .painel-vale{position:absolute;left:14px;right:14px;bottom:16px;z-index:402;
+                 background:#fff;border:1px solid var(--linha);border-radius:var(--raio);
+                 padding:16px;box-shadow:0 8px 28px rgba(27,58,42,.24);display:none;
+                 max-height:56%;overflow-y:auto}
+    .painel-vale.visivel{display:block}
+    .painel-vale .titulo-painel{font-weight:800;font-size:16.5px;padding-right:22px}
+    .painel-vale .nota{color:var(--suave);font-size:12px;margin:2px 0 10px}
+    .painel-vale .carregando{color:var(--suave);font-size:14px;padding:6px 0}
+    .linha-vale{display:flex;align-items:center;gap:11px;padding:9px 0;
+                border-bottom:1px solid var(--linha)}
+    .linha-vale:last-of-type{border-bottom:none}
+    .linha-vale .corpo{flex:1;min-width:0}
+    .linha-vale .titulo{font-weight:600;font-size:14.5px;overflow:hidden;
+                        text-overflow:ellipsis;white-space:nowrap}
+    .linha-vale .detalhe{color:var(--suave);font-size:12px;margin-top:2px}
+    .linha-vale .valor{font-weight:800;color:var(--verde);white-space:nowrap}
+    .veredito{margin-top:11px;padding:11px 13px;border-radius:12px;font-size:13.5px;line-height:1.45}
+    .veredito.sim{background:#E8F0E2;color:#24521f}
+    .veredito.nao{background:#FBEAE3;color:#8f2f0c}
+
+    .legenda{position:absolute;left:14px;bottom:16px;z-index:400;background:rgba(255,255,255,.95);
+             border:1px solid var(--linha);border-radius:99px;padding:7px 13px;
+             font-size:11.5px;color:var(--suave);display:flex;gap:12px;
+             box-shadow:0 2px 10px rgba(27,58,42,.16)}
+    .legenda i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px}
+
+    .leaflet-control-attribution{font-size:9.5px}
+    .leaflet-top.leaflet-left{margin-top:150px}
+    .leaflet-top.leaflet-right{margin-top:150px}
+    .leaflet-control-zoom a{border-radius:10px !important}
+  </style>
+{% endblock %}
+
+{% block conteudo %}
+
+{% if not total_locais %}
+  <div style="padding:20px 16px">
+    <h1>Mercados perto de você</h1>
+    <p class="sub">Importe os mercados da sua região para começar.</p>
+    <div class="cartao">
+      <form method="post" action="{{ url_for('importar_mapa') }}">
+        <div class="campo">
+          <label for="area">Sua cidade ou bairro</label>
+          <input type="text" id="area" name="area" placeholder="Ex.: Setor Bueno, Goiânia" required>
+        </div>
+        <button class="botao grande" type="submit">Importar do OpenStreetMap</button>
+      </form>
+      <p style="font-size:12.5px;color:var(--suave);margin:14px 0 0">
+        Dados do OpenStreetMap, gratuito e mantido pela comunidade.
+      </p>
+    </div>
+  </div>
+{% else %}
+
+<div class="tela-mapa">
+  <div id="mapa"></div>
+
+  <div class="sobreposicao">
+    <form class="campo-busca" method="get" action="{{ url_for('produtos') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" name="q" placeholder="Buscar produto ou mercado">
+    </form>
+
+    <div class="chips">
+      <button class="chip ativo" data-filtro="todos" type="button">Todos · {{ total_locais }}</button>
+      <button class="chip" data-filtro="precos" type="button">Com preços · {{ com_precos }}</button>
+      {% for tipo, quantidade in cache.por_tipo().items() %}
+        <button class="chip" data-filtro="{{ tipo }}" type="button">
+          {{ tipos[tipo] if tipo in tipos else tipo }} · {{ quantidade }}
+        </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="acoes-mapa">
+    <button class="acao" id="btn-local" type="button" aria-label="Onde estou e vale a pena">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+        <circle cx="12" cy="12" r="8"/>
+      </svg>
+    </button>
+    <button class="acao" id="btn-enquadrar" type="button" aria-label="Ver todos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="legenda" id="legenda">
+    <span><i style="background:#2C5F2D"></i>com preços</span>
+    <span><i style="background:#C1440E"></i>sem preços</span>
+  </div>
+
+  <div class="painel-vale" id="painel-vale"></div>
+
+  <div class="cartao-local" id="cartao-local">
+    <button class="fechar" id="fechar-cartao" type="button" aria-label="Fechar">&times;</button>
+    <div class="nome" id="cartao-nome"></div>
+    <div class="meta" id="cartao-meta"></div>
+    <div id="cartao-acoes"></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/leaflet.js') }}"></script>
+<script>
+  const LOCAIS = {{ locais_json|safe }};
+  const CENTRO = {{ centro_json|safe }};
+
+  const mapa = L.map("mapa", { zoomControl: true, scrollWheelZoom: true })
+                .setView(CENTRO, 13);
+
+  // Satélite como visão padrão: o usuário reconhece o mercado pelo prédio e
+  // pelo estacionamento antes de ler qualquer nome.
+  const satelite = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 19, attribution: "Imagens &copy; Esri, Maxar, Earthstar Geographics" });
+
+  // A imagem de satélite não traz nome de rua: esta camada desenha só rótulos.
+  const rotulos = L.tileLayer(
+    "https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
+    { maxZoom: 19, attribution: "&copy; CARTO" });
+
+  const ruas = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19, attribution: "&copy; OpenStreetMap" });
+
+  const camadaSatelite = L.layerGroup([satelite, rotulos]).addTo(mapa);
+  L.control.layers({ "Satélite": camadaSatelite, "Mapa de ruas": ruas }, null,
+                   { position: "topright", collapsed: true }).addTo(mapa);
+
+  const grupo = L.featureGroup().addTo(mapa);
+  const marcadores = [];
+
+  LOCAIS.forEach(function (local) {
+    const temPreco = Boolean(local.cnpj);
+    const marcador = L.circleMarker([local.latitude, local.longitude], {
+      radius: temPreco ? 11 : 7,
+      color: "#fff", weight: 2,
+      fillColor: temPreco ? "#2C5F2D" : "#C1440E",
+      fillOpacity: temPreco ? 1 : 0.8,
+    });
+    marcador.on("click", function () { abrirCartao(local); });
+    marcadores.push({ marcador: marcador, local: local });
+    grupo.addLayer(marcador);
+  });
+
+  // Cartão inferior no lugar do balão padrão: é o padrão de app de mapa.
+  const cartao = document.getElementById("cartao-local");
+  const painel = document.getElementById("painel-vale");
+  const legenda = document.getElementById("legenda");
+
+  function abrirCartao(local) {
+    painel.classList.remove("visivel");
+    document.getElementById("cartao-nome").textContent = local.nome;
+
+    let meta = [local.tipo_legivel, local.endereco].filter(Boolean).join(" · ");
+    if (local.precisao === "cep" || local.precisao === "rua") {
+      meta += " · posição aproximada";
+    }
+    document.getElementById("cartao-meta").textContent = meta;
+
+    const acoes = document.getElementById("cartao-acoes");
+    const destino = local.latitude + "," + local.longitude;
+    const rota = '<a class="botao secundario" style="padding:11px 18px;font-size:14px" ' +
+                 'target="_blank" rel="noopener" ' +
+                 'href="https://www.openstreetmap.org/directions?to=' + destino + '">Traçar rota</a>';
+
+    if (local.cnpj) {
+      acoes.innerHTML =
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<a class="botao" style="padding:11px 18px;font-size:14px" href="/produtos?q=' +
+        encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>' + rota + '</div>';
+    } else {
+      acoes.innerHTML =
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<a class="botao" style="padding:11px 18px;font-size:14px" href="/enviar">Enviar cupom daqui</a>' +
+        rota + '</div>';
+    }
+    cartao.classList.add("visivel");
+    legenda.style.display = "none";
+  }
+
+  function fecharCartao() {
+    cartao.classList.remove("visivel");
+    legenda.style.display = "flex";
+  }
+  document.getElementById("fechar-cartao").addEventListener("click", fecharCartao);
+  mapa.on("click", fecharCartao);
+
+  // Filtros aplicados sem recarregar a página.
+  document.querySelectorAll(".chip").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("ativo"); });
+      chip.classList.add("ativo");
+      const filtro = chip.dataset.filtro;
+
+      marcadores.forEach(function (m) {
+        const mostrar = filtro === "todos" ||
+          (filtro === "precos" && m.local.cnpj) || m.local.tipo === filtro;
+        if (mostrar) grupo.addLayer(m.marcador); else grupo.removeLayer(m.marcador);
+      });
+      enquadrar();
+    });
+  });
+
+  // O contêiner só tem altura final depois do layout: avisar o Leaflet ANTES
+  // de enquadrar evita que parte do mapa fique cinza.
+  function enquadrar() {
+    mapa.invalidateSize();
+    const limites = grupo.getBounds();
+    if (limites.isValid()) mapa.fitBounds(limites.pad(0.08), { maxZoom: 15 });
+  }
+  requestAnimationFrame(enquadrar);
+  window.addEventListener("load", enquadrar);
+  window.addEventListener("resize", function () { mapa.invalidateSize(); });
+  document.getElementById("btn-enquadrar").addEventListener("click", enquadrar);
+
+  // ---------- "vale a pena ir até lá?" ----------
+  // A posição é usada só no cálculo desta requisição e não é armazenada.
+  let meuPonto = null;
+
+  document.getElementById("btn-local").addEventListener("click", function () {
+    if (!navigator.geolocation) return alert("Seu navegador não oferece localização.");
+    const botao = document.getElementById("btn-local");
+    botao.classList.add("ativo");
+
+    navigator.geolocation.getCurrentPosition(
+      function (posicao) {
+        meuPonto = [posicao.coords.latitude, posicao.coords.longitude];
+        L.circleMarker(meuPonto, {
+          radius: 9, color: "#fff", weight: 3, fillColor: "#1C5D7A", fillOpacity: 1
+        }).addTo(mapa).bindPopup("Você está aqui");
+        mapa.setView(meuPonto, 14);
+        calcularViabilidade();
+      },
+      function () {
+        botao.classList.remove("ativo");
+        alert("Não consegui obter sua localização.");
+      }
+    );
+  });
+
+  // Preferências do veículo, guardadas apenas neste aparelho.
+  function preferencias() {
+    let consumo = 10, preco = 6.0;
+    try {
+      consumo = parseFloat(localStorage.getItem("tabao-consumo")) || consumo;
+      preco = parseFloat(localStorage.getItem("tabao-preco-combustivel")) || preco;
+    } catch (e) {}
+    return { consumo: consumo, preco: preco };
+  }
+
+  function calcularViabilidade() {
+    if (!meuPonto) return;
+    const p = preferencias();
+    fecharCartao();
+    legenda.style.display = "none";
+    painel.classList.add("visivel");
+    painel.innerHTML = '<div class="carregando">Calculando a rota até cada mercado...</div>';
+
+    fetch("/api/viabilidade?lat=" + meuPonto[0] + "&lon=" + meuPonto[1] +
+          "&consumo=" + p.consumo + "&preco=" + p.preco)
+      .then(function (r) { return r.json(); })
+      .then(function (dados) { desenhar(dados, p); })
+      .catch(function () {
+        painel.innerHTML = '<div class="carregando">Não consegui calcular agora.</div>';
+      });
+  }
+
+  function desenhar(dados, p) {
+    const fechar = '<button class="fechar" onclick="document.getElementById(\'painel-vale\')' +
+                   '.classList.remove(\'visivel\')">&times;</button>';
+
+    if (!dados.resultados || !dados.resultados.length) {
+      painel.innerHTML = fechar + '<div class="carregando">' +
+        (dados.aviso || "Sem mercados com preços para comparar ainda.") + "</div>";
+      return;
+    }
+
+    let html = fechar +
+      '<div class="titulo-painel">Vale a pena ir até lá?</div>' +
+      '<div class="nota">Compra + combustível de ida e volta · ' +
+      p.consumo + " km/l · R$ " + p.preco.toFixed(2) + "/L</div>";
+
+    dados.resultados.slice(0, 4).forEach(function (r, i) {
+      html +=
+        '<div class="linha-vale">' +
+        '<span class="medalha ' + (i === 0 ? "primeiro" : "") + '">' + (i + 1) + "</span>" +
+        '<div class="corpo"><div class="titulo">' + r.nome + "</div>" +
+        '<div class="detalhe">' + r.distancia_km + " km" +
+        (r.rota_real ? "" : " (estimado)") + " · compra R$ " + r.custo_compra.toFixed(2) +
+        " + combustível R$ " + r.custo_combustivel.toFixed(2) + "</div></div>" +
+        '<div class="valor">R$ ' + r.custo_total.toFixed(2) + "</div></div>";
+    });
+
+    if (dados.comparacao) {
+      const c = dados.comparacao;
+      html += '<div class="veredito ' + (c.compensa ? "sim" : "nao") + '">' +
+        (c.compensa
+          ? "Compensa ir até " + c.alternativa + ": mesmo gastando R$ " +
+            c.custo_extra_do_trajeto.toFixed(2) + " a mais de combustível por " +
+            c.km_a_mais + " km, você economiza <b>R$ " + c.saldo.toFixed(2) + "</b>."
+          : "Não compensa: a economia de R$ " + c.economia_na_compra.toFixed(2) +
+            " não cobre os R$ " + c.custo_extra_do_trajeto.toFixed(2) +
+            " de combustível a mais.") +
+        "</div>";
+    }
+
+    painel.innerHTML = html;
+  }
+</script>
+
+{% endif %}
+{% endblock %}

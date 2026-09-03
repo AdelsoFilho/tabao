@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% set pagina = "enviar" %}
+{% block titulo %}Enviar cupom — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>Fotografe o cupom</h1>
+<p class="sub">Você só tira a foto. O preço é lido da nota, não digitado.</p>
+
+<form method="post" id="form-cupom">
+  <label for="foto" class="cartao" id="area-foto"
+         style="display:flex;flex-direction:column;align-items:center;gap:12px;
+                padding:34px 20px;text-align:center;cursor:pointer;
+                border-style:dashed;border-width:2px;border-color:var(--musgo)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#2C5F2D" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" style="width:46px;height:46px">
+      <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
+      <circle cx="12" cy="13" r="3.5"/>
+    </svg>
+    <span style="font-weight:700;font-size:16px;color:var(--verde)" id="rotulo-foto">
+      Tirar foto do cupom
+    </span>
+    <span style="color:var(--suave);font-size:13.5px" id="dica-foto">
+      Enquadre o QR Code impresso no rodapé
+    </span>
+  </label>
+
+  <!-- A imagem é lida aqui no aparelho e nunca sai dele: o que vai para o
+       servidor é apenas a URL contida no QR Code. -->
+  <input type="file" id="foto" accept="image/*" capture="environment"
+         style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+
+  <details class="cartao" style="margin-top:4px" id="bloco-url">
+    <summary style="cursor:pointer;font-weight:600;font-size:14.5px;color:var(--verde)">
+      Ou colar a URL do QR Code
+    </summary>
+    <div class="campo" style="margin:14px 0 0">
+      <input type="text" name="url" id="campo-url"
+             placeholder="https://nfeweb.sefaz.go.gov.br/...?p=...">
+    </div>
+  </details>
+
+  <button class="botao grande" type="submit" id="btn-enviar" style="margin-top:12px">
+    Ler cupom
+  </button>
+</form>
+
+<div class="cartao" style="margin-top:20px">
+  <h2 style="margin:0 0 12px">Como funciona</h2>
+  {% for passo in [
+      "O QR Code carrega a URL oficial da nota na SEFAZ.",
+      "O app abre essa página e extrai os produtos e preços.",
+      "Você confere o que foi lido e confirma.",
+      "Os preços entram na base e ajudam toda a comunidade."] %}
+    <div class="linha" style="padding:11px 0">
+      <span class="medalha">{{ loop.index }}</span>
+      <div class="corpo"><div class="detalhe" style="color:var(--tinta);font-size:14px">
+        {{ passo }}
+      </div></div>
+    </div>
+  {% endfor %}
+  <p style="color:var(--suave);font-size:12.5px;margin:14px 0 0">
+    A foto é lida no próprio aparelho e não é enviada. O CPF do consumidor,
+    quando aparece na nota, é descartado na leitura e nunca é armazenado.
+  </p>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/jsQR.js') }}"></script>
+<script>
+  const campoFoto = document.getElementById("foto");
+  const campoUrl = document.getElementById("campo-url");
+  const rotulo = document.getElementById("rotulo-foto");
+  const dica = document.getElementById("dica-foto");
+  const area = document.getElementById("area-foto");
+  const botao = document.getElementById("btn-enviar");
+
+  function estado(texto, detalhe, cor) {
+    rotulo.textContent = texto;
+    dica.textContent = detalhe;
+    area.style.borderColor = cor;
+  }
+
+  // Reduz a imagem antes de procurar o código: uma foto de 12 megapixels
+  // trava o aparelho, e o QR Code continua legível bem menor.
+  function paraCanvas(imagem, larguraMaxima) {
+    const escala = Math.min(1, larguraMaxima / imagem.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(imagem.width * escala);
+    canvas.height = Math.round(imagem.height * escala);
+    canvas.getContext("2d").drawImage(imagem, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function procurarQR(imagem) {
+    // Tenta em três tamanhos: fotos de cupom variam muito de enquadramento.
+    for (const largura of [1000, 1600, 700]) {
+      const canvas = paraCanvas(imagem, largura);
+      const dados = canvas.getContext("2d")
+        .getImageData(0, 0, canvas.width, canvas.height);
+      const achado = jsQR(dados.data, dados.width, dados.height,
+                          { inversionAttempts: "attemptBoth" });
+      if (achado && achado.data) return achado.data;
+    }
+    return null;
+  }
+
+  campoFoto.addEventListener("change", () => {
+    if (!campoFoto.files.length) return;
+    estado("Lendo o QR Code...", "Isso acontece no seu aparelho", "var(--musgo)");
+
+    const imagem = new Image();
+    imagem.onload = () => {
+      const conteudo = procurarQR(imagem);
+      URL.revokeObjectURL(imagem.src);
+
+      if (conteudo) {
+        campoUrl.value = conteudo;
+        estado("QR Code lido", "Toque em 'Ler cupom' para continuar", "var(--verde)");
+      } else {
+        estado("Não encontrei o QR Code",
+               "Tente uma foto mais nítida, com o código inteiro visível",
+               "var(--acento)");
+      }
+    };
+    imagem.onerror = () => estado("Não consegui abrir a imagem",
+                                  "Tente outra foto", "var(--acento)");
+    imagem.src = URL.createObjectURL(campoFoto.files[0]);
+  });
+
+  // A consulta à SEFAZ leva alguns segundos: sem retorno visual o usuário
+  // acha que travou e clica de novo.
+  document.getElementById("form-cupom").addEventListener("submit", (evento) => {
+    if (!campoUrl.value.trim()) {
+      evento.preventDefault();
+      estado("Nenhum cupom lido ainda",
+             "Tire a foto do QR Code ou cole a URL", "var(--acento)");
+      return;
+    }
+    botao.disabled = true;
+    botao.textContent = "Consultando a SEFAZ...";
+    botao.style.opacity = ".7";
+  });
+</script>
+
+{% endblock %}

@@ -1,0 +1,48 @@
+{
+  "name": "TáBão — preços de mercado",
+  "short_name": "TáBão",
+  "description": "Descubra onde sua compra sai mais barata, com preços lidos de cupons fiscais reais.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F7F9F6",
+  "theme_color": "#1B3A2A",
+  "categories": ["shopping", "food", "finance"],
+  "icons": [
+    {
+      "src": "/static/icones/icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icones/icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icones/icone-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Enviar cupom",
+      "short_name": "Enviar",
+      "url": "/enviar",
+      "icons": [{ "src": "/static/icones/icone-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Mapa de mercados",
+      "short_name": "Mapa",
+      "url": "/mapa",
+      "icons": [{ "src": "/static/icones/icone-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

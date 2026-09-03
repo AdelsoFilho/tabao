@@ -1,0 +1,36 @@
+# Blueprint do Render: descreve o serviço para que a publicação seja
+# reproduzível em vez de configurada na mão pelo painel.
+#
+# Como publicar:
+#   1. suba este repositório para o GitHub;
+#   2. no Render, "New +" -> "Blueprint" e aponte para o repositório;
+#   3. o Render lê este arquivo e cria o serviço.
+#
+# ATENÇÃO AO DISCO: no plano gratuito o sistema de arquivos é efêmero. A pasta
+# dados/ é apagada a cada reinício ou nova publicação, então os preços
+# coletados se perdem. Para a apresentação isso é aceitável (basta reenviar os
+# cupons); para uso real, migre o Repositorio para Postgres.
+
+services:
+  - type: web
+    name: tabao
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2
+
+    healthCheckPath: /offline
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Gerada pelo Render e nunca versionada.
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: DADOS_DIR
+        value: /tmp/tabao-dados

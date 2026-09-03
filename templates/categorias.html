@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% set pagina = "categorias" %}
+{% block titulo %}Categorias — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>{{ nome_atual or "Categorias" }}</h1>
+<p class="sub">Todos os produtos do cupom, não apenas os da cesta básica.</p>
+
+{% if not contagem %}
+  <div class="cartao vazio">
+    <p>Nenhum produto coletado ainda.</p>
+    <a class="botao" href="{{ url_for('enviar') }}">Enviar um cupom</a>
+  </div>
+{% else %}
+
+<div class="chips">
+  <a class="chip {{ 'ativo' if not categoria }}" href="{{ url_for('categorias') }}">Todas</a>
+  {% for chave, quantidade in contagem.items() %}
+    <a class="chip {{ 'ativo' if chave == categoria }}"
+       href="{{ url_for('categorias', categoria=chave) }}">
+      {{ nome_categoria(chave) }} · {{ quantidade }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if categoria and achados %}
+  <div class="cartao compacto">
+    {% for p in achados %}
+      <div class="linha">
+        <div class="corpo">
+          <div class="titulo">{{ p.descricao_original }}</div>
+          <div class="detalhe">{{ p.nome_estabelecimento }} · {{ p.observado_em|data }}</div>
+        </div>
+        <div class="valor">R$ {{ p.preco|reais }}<small>{{ p.unidade }}</small></div>
+      </div>
+    {% endfor %}
+  </div>
+{% elif categoria %}
+  <div class="cartao vazio"><p>Nenhum produto nesta categoria ainda.</p></div>
+{% else %}
+  <div class="cartao vazio">
+    <p>Escolha uma categoria acima para ver os produtos e preços.</p>
+  </div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

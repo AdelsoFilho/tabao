@@ -1,0 +1,4 @@
+-r requirements.txt
+# Leitura de QR Code no servidor, usada pelo comando 'cli.py foto'.
+opencv-python-headless>=4.9
+pytest>=8.0

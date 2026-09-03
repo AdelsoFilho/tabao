@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set pagina = "enviar" %}
+{% block titulo %}Confira o cupom — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>Confira o que foi lido</h1>
+<p class="sub">Nada foi digitado: veio direto da nota na SEFAZ.</p>
+
+<div class="cartao">
+  <div style="font-weight:800;font-size:17px;margin-bottom:3px">
+    {{ cupom.estabelecimento.nome }}
+  </div>
+  <div style="color:var(--suave);font-size:13px">
+    {{ cupom.estabelecimento.cnpj_formatado }} ·
+    {{ cupom.emitido_em.strftime("%d/%m/%Y às %H:%M") }}
+  </div>
+  <div style="display:flex;gap:10px;margin-top:14px">
+    <div style="flex:1">
+      <div style="font-size:23px;font-weight:800;color:var(--verde)">
+        R$ {{ cupom.total_calculado|reais }}
+      </div>
+      <div style="color:var(--suave);font-size:12.5px">total do cupom</div>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:23px;font-weight:800">{{ linhas|length }}</div>
+      <div style="color:var(--suave);font-size:12.5px">
+        produtos · {{ da_cesta }} da cesta
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="cartao compacto">
+  {% for linha in linhas %}
+    <div class="linha">
+      <div class="corpo">
+        <div class="titulo" style="white-space:normal">{{ linha.item.descricao }}</div>
+        <div class="detalhe">
+          {{ "%.3f"|format(linha.item.quantidade) }} {{ linha.item.unidade }} ·
+          {{ linha.categoria }}
+          {%- if linha.cesta %} · <span style="color:var(--verde);font-weight:600">{{ linha.cesta }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="valor">R$ {{ linha.item.valor_total|reais }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<form method="post" action="{{ url_for('confirmar', chave=cupom.chave) }}">
+  <button class="botao grande" type="submit">Está correto — adicionar</button>
+</form>
+<p style="text-align:center;margin-top:14px">
+  <a href="{{ url_for('enviar') }}" style="color:var(--suave);font-size:14px">
+    Descartar e enviar outro
+  </a>
+</p>
+
+{% endblock %}

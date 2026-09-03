@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% set pagina = "buscar" %}
+{% block titulo %}Buscar — TáBão{% endblock %}
+{% block conteudo %}
+
+<form class="campo-busca" method="get">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+  <input type="text" name="q" value="{{ termo }}"
+         placeholder="bacon, queijo, tomate..." autofocus>
+  <button type="submit">Buscar</button>
+</form>
+
+{% if not termo %}
+  <div class="chips">
+    {% for sugestao in ["tomate", "queijo", "bacon", "arroz", "leite", "carne"] %}
+      <a class="chip" href="{{ url_for('produtos', q=sugestao) }}">{{ sugestao }}</a>
+    {% endfor %}
+  </div>
+  <div class="cartao vazio">
+    <p>Busque qualquer produto para comparar o preço entre os mercados.</p>
+    <a class="botao secundario" href="{{ url_for('categorias') }}">Ver por categoria</a>
+  </div>
+
+{% elif not achados %}
+  <div class="cartao vazio">
+    <p>Nada encontrado para <strong>{{ termo }}</strong>.</p>
+    <a class="botao secundario" href="{{ url_for('categorias') }}">Ver por categoria</a>
+  </div>
+
+{% else %}
+  {% if resumo %}
+    <div class="destaques">
+      <div class="destaque">
+        <div class="n">R$ {{ resumo.minimo|reais }}</div><div class="r">menor preço</div>
+      </div>
+      <div class="destaque claro">
+        <div class="n">R$ {{ resumo.mediana|reais }}</div><div class="r">mediana</div>
+      </div>
+      <div class="destaque claro">
+        <div class="n">R$ {{ resumo.maximo|reais }}</div><div class="r">maior preço</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <h2>{{ achados|length }} resultado(s) para "{{ termo }}"</h2>
+  <div class="cartao compacto">
+    {% for p in achados %}
+      <div class="linha">
+        <span class="medalha {{ 'primeiro' if loop.first and achados|length > 1 }}">
+          {{ loop.index }}
+        </span>
+        <div class="corpo">
+          <div class="titulo">{{ p.descricao_original }}</div>
+          <div class="detalhe">{{ p.nome_estabelecimento }} · {{ p.observado_em|data }}</div>
+        </div>
+        <div class="valor">R$ {{ p.preco|reais }}<small>{{ p.unidade }}</small></div>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% endblock %}

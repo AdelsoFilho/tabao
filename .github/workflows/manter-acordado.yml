@@ -1,0 +1,37 @@
+# Mantém o serviço gratuito acordado.
+#
+# O plano gratuito do Render hiberna o serviço após ~15 minutos sem acesso, e a
+# primeira visita depois disso demora cerca de 50 segundos. Esta tarefa faz uma
+# requisição periódica para evitar que isso aconteça na hora da apresentação.
+#
+# O mesmo ping serve ao Supabase, se ele for adotado: qualquer consulta reseta
+# o contador de 7 dias de inatividade que pausa projetos gratuitos.
+#
+# Configure a variável APP_URL em Settings > Secrets and variables > Actions >
+# Variables, com o endereço público do serviço.
+
+name: Manter acordado
+
+on:
+  schedule:
+    # A cada 10 minutos, apenas em horário comercial de Brasília (UTC-3),
+    # para não gastar minutos do plano gratuito de madrugada.
+    - cron: "*/10 11-23 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acordar o serviço
+        run: |
+          URL="${{ vars.APP_URL }}"
+          if [ -z "$URL" ]; then
+            echo "Defina a variável APP_URL nas configurações do repositório."
+            exit 0
+          fi
+          codigo=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL/offline")
+          echo "Resposta de $URL: $codigo"
+          if [ "$codigo" != "200" ]; then
+            echo "::warning::O serviço respondeu $codigo"
+          fi

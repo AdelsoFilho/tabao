@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>{% block titulo %}TáBão{% endblock %}</title>
+
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<meta name="theme-color" content="#1B3A2A">
+<meta name="description" content="Descubra onde sua compra sai mais barata, com preços lidos de cupons fiscais reais.">
+<link rel="icon" href="{{ url_for('static', filename='icones/favicon-64.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icones/apple-touch-icon.png') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TáBão">
+<style>
+  :root{
+    --escuro:#1B3A2A; --verde:#2C5F2D; --musgo:#97BC62; --acento:#C1440E;
+    --tinta:#1F2421; --suave:#667066; --creme:#F1F5EE; --linha:#DDE5DA;
+    --fundo:#F7F9F6; --branco:#fff;
+    --raio:16px; --barra:64px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{margin:0;background:var(--fundo);color:var(--tinta);
+       font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       overscroll-behavior-y:none}
+  a{color:var(--verde);text-decoration:none}
+
+  /* ---------- barra superior ---------- */
+  .app-topo{position:sticky;top:0;z-index:500;background:var(--escuro);color:#fff;
+            padding:calc(11px + env(safe-area-inset-top)) 16px 11px;
+            display:flex;align-items:center;gap:10px}
+  .marca{display:flex;align-items:center;gap:9px;font-size:19px;font-weight:800;
+         color:#fff;letter-spacing:-.3px}
+  .marca svg{width:24px;height:24px;flex:none}
+  .local{margin-left:auto;display:flex;align-items:center;gap:5px;color:#D7E2D2;
+         font-size:13px;background:rgba(255,255,255,.12);padding:7px 13px;border-radius:99px}
+  .local svg{width:14px;height:14px}
+
+  /* ---------- conteúdo ---------- */
+  .conteudo{padding:16px 16px calc(var(--barra) + 26px + env(safe-area-inset-bottom));
+            max-width:820px;margin:0 auto}
+  .conteudo.cheio{padding:0 0 calc(var(--barra) + env(safe-area-inset-bottom));max-width:none}
+
+  h1{font-size:22px;margin:2px 0 4px;letter-spacing:-.4px;font-weight:800}
+  h2{font-size:13px;margin:24px 0 10px;color:var(--suave);font-weight:700;
+     text-transform:uppercase;letter-spacing:.8px}
+  .sub{color:var(--suave);margin:0 0 18px;font-size:14.5px}
+
+  .cartao{background:var(--branco);border:1px solid var(--linha);
+          border-radius:var(--raio);padding:16px;margin-bottom:12px}
+  .cartao.compacto{padding:0;overflow:hidden}
+
+  .aviso{padding:13px 16px;border-radius:var(--raio);margin-bottom:12px;font-size:14.5px}
+  .aviso.sucesso{background:#E8F0E2;color:#24521f;border:1px solid #BFD8B4}
+  .aviso.erro{background:#FBEAE3;color:#8f2f0c;border:1px solid #F0C7B6}
+  .aviso.aviso{background:#F6F0DE;color:#6b5410;border:1px solid #E4D7A8}
+
+  /* ---------- busca e chips ---------- */
+  .campo-busca{display:flex;align-items:center;gap:10px;background:var(--branco);
+               border:1px solid var(--linha);border-radius:99px;padding:12px 18px;
+               margin-bottom:12px;box-shadow:0 1px 3px rgba(27,58,42,.05)}
+  .campo-busca svg{width:18px;height:18px;color:var(--suave);flex:none}
+  .campo-busca input{flex:1;background:none;border:none;outline:none;color:var(--tinta);
+                     font-size:15.5px;font-family:inherit;min-width:0}
+  .campo-busca input::placeholder{color:var(--suave)}
+  .campo-busca button{background:var(--verde);color:#fff;border:none;border-radius:99px;
+                      padding:8px 16px;font-weight:700;font-size:14px;font-family:inherit}
+
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;margin-bottom:12px;
+         scrollbar-width:none;-ms-overflow-style:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;background:var(--branco);border:1px solid var(--linha);color:var(--tinta);
+        padding:9px 17px;border-radius:99px;font-size:14px;font-weight:600;white-space:nowrap}
+  .chip.ativo{background:var(--verde);color:#fff;border-color:var(--verde)}
+
+  /* ---------- números ---------- */
+  .destaques{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+             gap:10px;margin-bottom:12px}
+  .destaques .destaque{background:var(--verde);color:#fff;border-radius:var(--raio);padding:14px 16px}
+  .destaques .destaque .n{font-size:25px;font-weight:800;line-height:1.1}
+  .destaques .destaque .r{font-size:12.5px;color:#D5E0D0;margin-top:3px}
+  .destaques .destaque.claro{background:var(--branco);border:1px solid var(--linha);color:var(--tinta)}
+  .destaques .destaque.claro .n{color:var(--verde)}
+  .destaques .destaque.claro .r{color:var(--suave)}
+
+  /* ---------- listas ---------- */
+  .linha{display:flex;align-items:center;gap:13px;padding:14px 16px;
+         border-bottom:1px solid var(--linha)}
+  .linha:last-child{border-bottom:none}
+  .linha .corpo{flex:1;min-width:0}
+  .linha .titulo{font-weight:600;font-size:15px}
+  .linha .detalhe{color:var(--suave);font-size:13px;margin-top:2px;
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linha .valor{font-weight:800;font-size:16px;white-space:nowrap;color:var(--verde);
+                font-variant-numeric:tabular-nums;text-align:right}
+  .linha .valor small{display:block;font-weight:500;font-size:11.5px;
+                      color:var(--suave);margin-top:2px}
+
+  .medalha{display:flex;align-items:center;justify-content:center;width:30px;height:30px;
+           border-radius:50%;background:var(--creme);color:var(--verde);
+           font-weight:800;font-size:14px;flex:none}
+  .medalha.primeiro{background:var(--verde);color:#fff}
+
+  .etiqueta{display:inline-block;font-size:11.5px;padding:3px 10px;border-radius:99px;
+            background:var(--creme);color:var(--verde);border:1px solid var(--linha);
+            white-space:nowrap}
+  .etiqueta.forte{background:var(--verde);color:#fff;border-color:var(--verde)}
+
+  .faixa{background:var(--acento);color:#fff;border-radius:var(--raio);
+         padding:16px 18px;margin-bottom:12px}
+  .faixa .n{font-size:25px;font-weight:800;line-height:1.15}
+  .faixa .r{font-size:13px;opacity:.9;margin-top:3px}
+
+  /* ---------- botões ---------- */
+  .botao{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+         background:var(--verde);color:#fff;border:none;padding:14px 24px;
+         border-radius:99px;font-size:15.5px;font-weight:700;cursor:pointer;
+         font-family:inherit}
+  .botao:active{transform:scale(.98)}
+  .botao.secundario{background:var(--branco);color:var(--verde);border:1px solid var(--linha)}
+  .botao.grande{width:100%;padding:16px}
+
+  input[type=text],input[type=file]{
+    width:100%;padding:14px 16px;background:var(--branco);border:1px solid var(--linha);
+    border-radius:var(--raio);font-size:15.5px;font-family:inherit;color:var(--tinta);outline:none}
+  input[type=text]:focus{border-color:var(--verde)}
+  label{display:block;font-weight:600;font-size:14px;margin:0 0 8px}
+  .campo{margin-bottom:16px}
+
+  .vazio{text-align:center;padding:44px 22px;color:var(--suave)}
+  .vazio p{margin:0 0 20px;font-size:15px}
+  .rodape{color:var(--suave);font-size:12px;text-align:center;margin-top:28px;
+          line-height:1.6;opacity:.85}
+
+  /* ---------- barra de abas ---------- */
+  .abas{position:fixed;left:0;right:0;bottom:0;z-index:900;
+        background:rgba(255,255,255,.96);backdrop-filter:blur(12px);
+        border-top:1px solid var(--linha);display:grid;grid-template-columns:repeat(4,1fr);
+        padding-bottom:env(safe-area-inset-bottom)}
+  .aba{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+       height:var(--barra);color:var(--suave);font-size:11px;font-weight:600}
+  .aba svg{width:23px;height:23px}
+  .aba.ativa{color:var(--verde)}
+  .aba.principal{color:var(--verde)}
+  .aba.principal .circulo{background:var(--verde);color:#fff;
+                         width:44px;height:44px;flex:none;   /* flex:none impede
+                         que o pai em coluna esmague a altura do círculo */
+                         border-radius:50%;display:flex;align-items:center;
+                         justify-content:center;margin-top:-14px;
+                         box-shadow:0 5px 14px rgba(44,95,45,.32)}
+  .aba.principal .circulo svg{width:21px;height:21px}
+
+  .instalar{display:none;background:var(--creme);border:1px solid var(--musgo);
+            border-radius:var(--raio);padding:13px 15px;margin-bottom:12px;
+            align-items:center;gap:12px;font-size:14px}
+  .instalar.visivel{display:flex}
+  .instalar strong{display:block;color:var(--verde)}
+  .instalar .corpo{flex:1;color:var(--suave);font-size:12.5px}
+  .instalar button{background:var(--verde);color:#fff;border:none;padding:9px 15px;
+                   border-radius:99px;font-weight:700;font-size:13.5px;font-family:inherit}
+  .instalar .fechar{background:none;color:var(--suave);padding:6px 4px;font-size:18px}
+
+  @media (min-width:760px){
+    .abas{grid-template-columns:repeat(4,110px);justify-content:center;
+          border-radius:99px 99px 0 0;left:50%;right:auto;transform:translateX(-50%);
+          border:1px solid var(--linha);border-bottom:none}
+  }
+</style>
+{% block cabeca %}{% endblock %}
+</head>
+<body>
+
+<header class="app-topo">
+  <a href="{{ url_for('inicio') }}" class="marca">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#97BC62" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 8h16l-1.6 11.2a2 2 0 0 1-2 1.8H7.6a2 2 0 0 1-2-1.8L4 8Z"/>
+      <path d="M8.5 8a3.5 3.5 0 0 1 7 0"/>
+    </svg>
+    TáBão
+  </a>
+  <span class="local">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+    </svg>
+    {{ area_atual or "sua região" }}
+  </span>
+</header>
+
+<div class="conteudo {% block classe_conteudo %}{% endblock %}">
+  <div class="instalar" id="barra-instalar">
+    <span class="corpo"><strong>Instale o TáBão</strong>abre como aplicativo, sem navegador</span>
+    <button id="btn-instalar" type="button">Instalar</button>
+    <button class="fechar" id="btn-fechar-instalar" type="button" aria-label="Dispensar">&times;</button>
+  </div>
+
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for categoria, texto in mensagens %}
+      <div class="aviso {{ categoria }}">{{ texto }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block conteudo %}{% endblock %}
+</div>
+
+<nav class="abas">
+  <a class="aba {{ 'ativa' if pagina=='mapa' }}" href="{{ url_for('inicio') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14"/><path d="M15 6v14"/>
+    </svg>
+    Mapa
+  </a>
+  <a class="aba {{ 'ativa' if pagina in ('precos','cesta','categorias') }}" href="{{ url_for('precos') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/>
+    </svg>
+    Preços
+  </a>
+  <a class="aba principal" href="{{ url_for('enviar') }}">
+    <span class="circulo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
+        <circle cx="12" cy="13" r="3.5"/>
+      </svg>
+    </span>
+    Cupom
+  </a>
+  <a class="aba {{ 'ativa' if pagina=='buscar' }}" href="{{ url_for('produtos') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+    </svg>
+    Buscar
+  </a>
+</nav>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js", { scope: "/" })
+        .catch((erro) => console.warn("Service worker não registrado:", erro));
+    });
+  }
+
+  let eventoInstalacao = null;
+  const barra = document.getElementById("barra-instalar");
+
+  window.addEventListener("beforeinstallprompt", (evento) => {
+    evento.preventDefault();
+    eventoInstalacao = evento;
+    if (!localStorage.getItem("tabao-instalacao-dispensada")) barra.classList.add("visivel");
+  });
+
+  document.getElementById("btn-instalar").addEventListener("click", async () => {
+    if (!eventoInstalacao) return;
+    eventoInstalacao.prompt();
+    await eventoInstalacao.userChoice;
+    eventoInstalacao = null;
+    barra.classList.remove("visivel");
+  });
+
+  document.getElementById("btn-fechar-instalar").addEventListener("click", () => {
+    barra.classList.remove("visivel");
+    try { localStorage.setItem("tabao-instalacao-dispensada", "1"); } catch (e) {}
+  });
+
+  window.addEventListener("appinstalled", () => barra.classList.remove("visivel"));
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set pagina = "cesta" %}
+{% block titulo %}Cesta básica — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>Cesta básica</h1>
+<p class="sub">
+  Os treze itens do Decreto-Lei nº 399/1938, acompanhados pelo DIEESE.
+  As quantidades são a referência mensal por adulto.
+</p>
+
+<div class="cartao compacto">
+  {% for i in itens %}
+    <div class="linha">
+      <div class="corpo">
+        <div class="titulo">{{ i.nome }}</div>
+        <div class="detalhe">
+          {{ i.quantidade }} {{ i.unidade }} por mês
+          {%- if i.n > 0 %}
+            · {{ i.n }} coleta{{ 's' if i.n > 1 }}
+            {%- if i.n > 1 %} · varia {{ i.variacao_percentual }}%{% endif %}
+          {%- endif %}
+        </div>
+      </div>
+      {% if i.n > 0 %}
+        <div class="valor">
+          R$ {{ i.mediana|reais }}
+          <small>
+            {%- if i.n > 1 -%}
+              de {{ i.minimo|reais }} a {{ i.maximo|reais }}
+            {%- else -%}
+              preço único
+            {%- endif -%}
+          </small>
+        </div>
+      {% else %}
+        <span class="etiqueta">sem coleta</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+<p style="color:var(--suave);font-size:12.5px;margin:6px 2px 0">
+  O valor em destaque é a <strong>mediana</strong> dos preços coletados, menos
+  sensível a um preço fora do padrão que a média.
+</p>
+
+{% if matriz %}
+  <h2>Preço por mercado</h2>
+  {% for item, linha in matriz.items() %}
+    <div class="cartao compacto">
+      <div class="linha" style="background:var(--creme)">
+        <div class="corpo"><div class="titulo">{{ nome_item(item) }}</div></div>
+      </div>
+      {% for cnpj, preco in linha.items() %}
+        <div class="linha">
+          <div class="corpo">
+            <div class="detalhe" style="color:var(--tinta);font-size:14px">
+              {{ estabelecimentos.get(cnpj, cnpj) }}
+            </div>
+          </div>
+          <div class="valor">R$ {{ preco|reais }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% endblock %}

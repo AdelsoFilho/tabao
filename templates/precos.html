@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set pagina = "precos" %}
+{% block titulo %}Preços — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>Onde a compra sai mais barata</h1>
+<p class="sub">Preços lidos de cupons fiscais reais, conferidos pela comunidade.</p>
+
+{% if total_precos == 0 %}
+  <div class="cartao vazio">
+    <p><strong>Nenhum preço ainda.</strong><br>
+       Envie o primeiro cupom para começar a comparar.</p>
+    <a class="botao" href="{{ url_for('enviar') }}">Enviar um cupom</a>
+  </div>
+{% else %}
+
+<div class="destaques">
+  <div class="destaque">
+    <div class="n">{{ total_precos }}</div>
+    <div class="r">preços coletados</div>
+  </div>
+  <div class="destaque claro">
+    <div class="n">{{ estabelecimentos }}</div>
+    <div class="r">mercados</div>
+  </div>
+  <div class="destaque claro">
+    <div class="n">{{ itens_cobertos }}/{{ total_itens_cesta }}</div>
+    <div class="r">itens da cesta</div>
+  </div>
+  <div class="destaque claro">
+    <div class="n">{{ categorias|length }}</div>
+    <div class="r">categorias</div>
+  </div>
+</div>
+
+{% if ranking and ranking.estabelecimentos %}
+  {% if ranking.economia_possivel > 0 %}
+    <div class="faixa">
+      <div class="n">R$ {{ ranking.economia_possivel|reais }}</div>
+      <div class="r">
+        de diferença entre o mercado mais caro e o mais barato
+        ({{ ranking.economia_percentual }}%)
+      </div>
+    </div>
+  {% endif %}
+
+  <h2>Ranking da cesta básica</h2>
+  <div class="cartao compacto">
+    {% for e in ranking.estabelecimentos %}
+      <div class="linha">
+        <span class="medalha {{ 'primeiro' if loop.first }}">{{ loop.index }}</span>
+        <div class="corpo">
+          <div class="titulo">{{ e.nome }}</div>
+          <div class="detalhe">
+            {{ e.itens_encontrados }} de {{ total_itens_cesta }} itens
+            {%- if e.dias_desde_atualizacao is not none %}
+              · atualizado há {{ e.dias_desde_atualizacao }} dia(s)
+            {%- endif %}
+          </div>
+        </div>
+        <div class="valor">R$ {{ e.custo_total|reais }}<small>cesta do mês</small></div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="cartao">
+    <p style="margin:0;color:var(--suave);font-size:14.5px">
+      Ainda não há mercado com metade da cesta coberta, então o ranking não
+      seria confiável. Os preços já coletados estão abaixo.
+    </p>
+  </div>
+{% endif %}
+
+<h2>Coletado por categoria</h2>
+<div class="cartao compacto">
+  {% for chave, quantidade in categorias.items() %}
+    <a class="linha" href="{{ url_for('categorias', categoria=chave) }}">
+      <div class="corpo">
+        <div class="titulo" style="color:var(--tinta)">{{ nome_categoria(chave) }}</div>
+      </div>
+      <div class="valor" style="color:var(--suave);font-size:14px">{{ quantidade }}</div>
+    </a>
+  {% endfor %}
+</div>
+
+<p style="text-align:center;margin-top:18px">
+  <a class="botao secundario" href="{{ url_for('cesta') }}">Ver detalhe da cesta básica</a>
+</p>
+
+{% endif %}
+{% endblock %}

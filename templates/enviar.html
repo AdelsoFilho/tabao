@@ -6,7 +6,7 @@
 <h1>Envie o cupom</h1>
 <p class="sub">Você só envia a imagem. O preço é lido da nota, não digitado.</p>
 
-<form method="post" id="form-cupom">
+<form method="post" id="form-cupom" enctype="multipart/form-data">
   <div class="cartao" id="area-foto"
        style="display:flex;flex-direction:column;align-items:center;gap:12px;
               padding:28px 20px 22px;text-align:center;
@@ -48,9 +48,9 @@
   <!-- Dois campos separados porque o atributo "capture" força a câmera: com
        ele não dá para escolher da galeria, sem ele não dá para abrir a câmera
        direto. Ter os dois deixa a escolha com o usuário. -->
-  <input type="file" id="foto" accept="image/*" capture="environment"
+  <input type="file" id="foto" name="foto" accept="image/*" capture="environment"
          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
-  <input type="file" id="arquivo" accept="image/*"
+  <input type="file" id="arquivo" name="foto" accept="image/*"
          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
 
   <details class="cartao" style="margin-top:4px" id="bloco-url">
@@ -83,8 +83,9 @@
     </div>
   {% endfor %}
   <p style="color:var(--suave);font-size:12.5px;margin:14px 0 0">
-    A foto é lida no próprio aparelho e não é enviada. O CPF do consumidor,
-    quando aparece na nota, é descartado na leitura e nunca é armazenado.
+    A foto é lida no próprio aparelho. Só quando a leitura local não consegue
+    é que a imagem é enviada ao servidor para uma segunda tentativa. O CPF do
+    consumidor, quando aparece na nota, é descartado na leitura e nunca é armazenado.
   </p>
 </div>
 
@@ -108,7 +109,20 @@
   document.getElementById("btn-camera").addEventListener("click", function () { campoFoto.click(); });
   document.getElementById("btn-galeria").addEventListener("click", function () { campoArquivo.click(); });
 
-  function processarImagem(arquivo) {
+  // Guarda o input que contém a foto escolhida, para poder limpá-lo (quando a
+  // leitura local dá certo, a foto não precisa ser enviada) ou mantê-lo (quando
+  // falha, a foto vai ao servidor como segunda tentativa).
+  let campoAtivo = null;
+
+  function limparFotos() {
+    campoFoto.value = "";
+    campoArquivo.value = "";
+    campoAtivo = null;
+  }
+
+  function processarImagem(campo, arquivo) {
+    campoAtivo = campo;
+    campoUrl.value = "";
     estado("Procurando o QR Code...", "A imagem é lida no seu aparelho", "var(--musgo)");
 
     LeitorQR.ler(arquivo, function (etapa, total) {
@@ -121,35 +135,46 @@
       }
     }).then(function (conteudo) {
       if (conteudo) {
+        // Leu no aparelho: manda só a URL e descarta a foto, que não sai daqui.
         campoUrl.value = conteudo;
+        limparFotos();
         estado("QR Code lido", "Toque em 'Ler cupom' para continuar", "var(--verde)");
       } else {
-        estado("Não encontrei o QR Code",
-               "Tente enquadrar só o rodapé do cupom, com o código bem visível",
+        // Não leu aqui: mantém a foto para o servidor tentar decodificar.
+        estado("Vou tentar no servidor",
+               "Toque em 'Ler cupom' — a foto será enviada para leitura",
                "var(--acento)");
       }
     }).catch(function () {
-      estado("Não consegui abrir a imagem", "Tente outro arquivo", "var(--acento)");
+      // Nem abriu a imagem no navegador: ainda assim deixa o servidor tentar.
+      estado("Vou tentar no servidor",
+             "Toque em 'Ler cupom' — a foto será enviada para leitura",
+             "var(--acento)");
     });
   }
 
   [campoFoto, campoArquivo].forEach(function (campo) {
     campo.addEventListener("change", function () {
-      if (campo.files.length) processarImagem(campo.files[0]);
+      // Ao trocar de foto, esvazia o outro input para não enviar dois arquivos.
+      if (campo === campoFoto) campoArquivo.value = "";
+      else campoFoto.value = "";
+      if (campo.files.length) processarImagem(campo, campo.files[0]);
     });
   });
 
   // A consulta à SEFAZ leva alguns segundos: sem retorno visual o usuário
   // acha que travou e clica de novo.
   document.getElementById("form-cupom").addEventListener("submit", (evento) => {
-    if (!campoUrl.value.trim()) {
+    var temUrl = campoUrl.value.trim();
+    var temFoto = (campoAtivo && campoAtivo.files.length);
+    if (!temUrl && !temFoto) {
       evento.preventDefault();
       estado("Nenhum cupom lido ainda",
              "Tire a foto do QR Code ou cole a URL", "var(--acento)");
       return;
     }
     botao.disabled = true;
-    botao.textContent = "Consultando a SEFAZ...";
+    botao.textContent = temFoto ? "Lendo a foto..." : "Consultando a SEFAZ...";
     botao.style.opacity = ".7";
   });
 </script>

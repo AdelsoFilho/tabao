@@ -156,10 +156,11 @@ def enviar():
         return render_template("enviar.html")
 
     url_qrcode = (request.form.get("url") or "").strip()
-    foto = request.files.get("foto")
+    # Dois inputs (câmera e galeria) compartilham name="foto"; pega o preenchido.
+    foto = next((f for f in request.files.getlist("foto") if f and f.filename), None)
 
     try:
-        if foto and foto.filename:
+        if not url_qrcode and foto and foto.filename:
             sufixo = Path(foto.filename).suffix or ".jpg"
             with tempfile.NamedTemporaryFile(suffix=sufixo, delete=False) as arquivo:
                 foto.save(arquivo.name)
@@ -291,9 +292,10 @@ def cesta():
         dados["quantidade"] = quantidade
         dados["unidade"] = CESTA_BASICA[chave_item][2]
 
-        # Subtotal pela mediana: é a medida menos sensível a um preço atípico.
+        # Subtotal pelo preço da coleta mais recente: é o que o consumidor
+        # pagaria hoje, e não uma média que arrasta valores antigos.
         if dados["n"] > 0:
-            dados["subtotal"] = round(dados["mediana"] * quantidade, 2)
+            dados["subtotal"] = round(dados["preco_recente"] * quantidade, 2)
             dados["subtotal_minimo"] = round(dados["minimo"] * quantidade, 2)
             total_cesta += dados["subtotal"]
             itens_com_preco += 1

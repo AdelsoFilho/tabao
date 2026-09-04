@@ -11,7 +11,7 @@
  * dado que envelhece: a rede sempre tem prioridade quando está disponível.
  */
 
-const VERSAO = "tabao-v1";
+const VERSAO = "tabao-v2";
 const CACHE_ESTATICO = `${VERSAO}-estatico`;
 const CACHE_PAGINAS = `${VERSAO}-paginas`;
 

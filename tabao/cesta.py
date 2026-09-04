@@ -205,6 +205,7 @@ def estatisticas_do_item(precos: list[PrecoObservado], item: str) -> dict:
 
     mais_barato = min(observacoes, key=lambda o: o.preco)
     mais_caro = max(observacoes, key=lambda o: o.preco)
+    mais_recente = max(observacoes, key=lambda o: o.observado_em)
 
     return {
         "item": item,
@@ -223,6 +224,10 @@ def estatisticas_do_item(precos: list[PrecoObservado], item: str) -> dict:
         ),
         "onde_mais_barato": mais_barato.nome_estabelecimento,
         "onde_mais_caro": mais_caro.nome_estabelecimento,
+        # Preço da coleta mais recente: é o que o consumidor pagaria hoje.
+        "preco_recente": mais_recente.preco,
+        "onde_recente": mais_recente.nome_estabelecimento,
+        "quando_recente": mais_recente.observado_em,
     }
 
 

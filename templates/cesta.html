@@ -76,7 +76,7 @@
             </td>
             <td class="n">{{ i.quantidade }} {{ i.unidade }}</td>
             {% if i.n > 0 %}
-              <td class="n">R$ {{ i.mediana|reais }}</td>
+              <td class="n">R$ {{ i.preco_recente|reais }}</td>
               <td class="n"><strong>R$ {{ i.subtotal|reais }}</strong></td>
             {% else %}
               <td class="n vazio-td" colspan="2">sem coleta</td>
@@ -95,9 +95,9 @@
 </div>
 
 <p style="color:var(--suave);font-size:12.5px;margin:4px 2px 0">
-  O preço de cada item é a <strong>mediana</strong> das coletas, menos sensível
-  a um valor fora do padrão que a média. O subtotal multiplica esse preço pela
-  quantidade mensal de referência.
+  O preço de cada item é o da <strong>coleta mais recente</strong> — o que o
+  consumidor pagaria hoje. O subtotal multiplica esse preço pela quantidade
+  mensal de referência.
 </p>
 
 {% if matriz %}

@@ -202,6 +202,9 @@
       color: "#fff", weight: 2,
       fillColor: temPreco ? "#2C5F2D" : "#C1440E",
       fillOpacity: temPreco ? 1 : 0.8,
+      // Sem isto, o clique no marcador também dispara o "click" do mapa, que
+      // fecha o cartão no mesmo instante em que ele abre — o ponto "não abre".
+      bubblingMouseEvents: false,
     });
     marcador.on("click", function () { abrirCartao(local); });
 

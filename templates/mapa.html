@@ -60,6 +60,19 @@
              box-shadow:0 2px 10px rgba(27,58,42,.16)}
     .legenda i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px}
 
+    /* Etiqueta de preço sobre o marcador: discreta, só nos mercados com preços. */
+    .etiqueta-preco{background:rgba(255,255,255,.92);color:#24521f;border:none;
+                    box-shadow:0 1px 4px rgba(27,58,42,.25);border-radius:8px;
+                    font-size:11px;font-weight:800;padding:1px 6px;white-space:nowrap}
+    .etiqueta-preco::before{display:none}   /* remove a setinha do tooltip */
+
+    /* Bloco de valores dentro do cartão inferior. */
+    .valores-local{background:var(--creme);border-radius:12px;padding:10px 12px;
+                   margin-bottom:12px;font-size:13.5px;color:var(--tinta)}
+    .valores-local .destaque{font-weight:800;color:var(--verde)}
+    .valores-local .coord{color:var(--suave);font-size:11.5px;margin-top:4px;
+                          display:flex;align-items:center;gap:5px}
+
     .leaflet-control-attribution{font-size:9.5px}
     .leaflet-top.leaflet-left{margin-top:150px}
     .leaflet-top.leaflet-right{margin-top:150px}
@@ -160,6 +173,18 @@
   const grupo = L.featureGroup().addTo(mapa);
   const marcadores = [];
 
+  // Formata um número no padrão brasileiro (1234.5 -> "1.234,50").
+  function reais(n) {
+    return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  }
+
+  // Texto curto do valor de um mercado: a cesta quando dá, senão nº de preços.
+  function etiquetaValor(local) {
+    if (local.cesta) return "R$ " + reais(local.cesta);
+    if (local.n_precos) return local.n_precos + (local.n_precos === 1 ? " preço" : " preços");
+    return "";
+  }
+
   LOCAIS.forEach(function (local) {
     const temPreco = Boolean(local.cnpj);
     const marcador = L.circleMarker([local.latitude, local.longitude], {
@@ -169,6 +194,18 @@
       fillOpacity: temPreco ? 1 : 0.8,
     });
     marcador.on("click", function () { abrirCartao(local); });
+
+    // Valor discreto sobre o marcador, só nos mercados que têm preços.
+    if (temPreco) {
+      const etiqueta = etiquetaValor(local);
+      if (etiqueta) {
+        marcador.bindTooltip(etiqueta, {
+          permanent: true, direction: "top", offset: [0, -9],
+          className: "etiqueta-preco", opacity: 1,
+        });
+      }
+    }
+
     marcadores.push({ marcador: marcador, local: local });
     grupo.addLayer(marcador);
   });
@@ -189,6 +226,31 @@
     document.getElementById("cartao-meta").textContent = meta;
 
     const acoes = document.getElementById("cartao-acoes");
+
+    // Bloco de valores: o que a cesta custa aqui (ou quantos preços há) e a
+    // localização exata do ponto. Discreto, só informativo.
+    const coord = local.latitude.toFixed(5) + ", " + local.longitude.toFixed(5);
+    const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+                    local.latitude + "," + local.longitude;
+    let valores = "";
+    if (local.cnpj) {
+      let linha;
+      if (local.cesta) {
+        linha = 'Cesta básica aqui: <span class="destaque">R$ ' + reais(local.cesta) +
+                "</span>" + (local.itens_cesta ? " · " + local.itens_cesta + " itens" : "");
+      } else {
+        linha = '<span class="destaque">' + local.n_precos +
+                (local.n_precos === 1 ? " preço" : " preços") + "</span> coletado" +
+                (local.n_precos === 1 ? "" : "s") + " aqui";
+      }
+      valores = '<div class="valores-local">' + linha +
+                '<div class="coord">📍 ' + coord +
+                ' · <a href="' + mapsUrl + '" target="_blank" rel="noopener">abrir no mapa</a></div></div>';
+    } else {
+      valores = '<div class="valores-local">Ainda sem preços aqui — seja o primeiro a enviar um cupom.' +
+                '<div class="coord">📍 ' + coord +
+                ' · <a href="' + mapsUrl + '" target="_blank" rel="noopener">abrir no mapa</a></div></div>';
+    }
     const rota = '<button class="botao secundario" type="button" id="btn-rota" ' +
                  'style="padding:11px 18px;font-size:14px">Traçar rota</button>';
     const principal = local.cnpj
@@ -196,7 +258,8 @@
         encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>'
       : '<a class="botao" style="padding:11px 18px;font-size:14px" href="/enviar">Enviar cupom daqui</a>';
 
-    acoes.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    acoes.innerHTML = valores +
+                      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
                       principal + rota + '</div>' +
                       '<div id="resumo-rota" style="margin-top:11px"></div>';
 

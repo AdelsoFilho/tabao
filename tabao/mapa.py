@@ -517,15 +517,55 @@ def locais_dos_estabelecimentos(repositorio) -> list[Local]:
     ]
 
 
+# Dois pontos mais próximos que isto são tratados como a MESMA loja. Cobre o
+# caso em que o casamento por nome falha (o cupom diz "CARREFOUR COMERCIO E
+# INDUSTRIA LTDA" e o OSM diz "Carrefour Flamboyant"), mas os dois pontos caem
+# no mesmo prédio. Supermercados diferentes raramente ficam a menos de 120 m um
+# do outro, então o valor é seguro. Ajuste aqui para afrouxar ou apertar.
+RAIO_MESMA_LOJA_METROS = 120
+
+
+def _distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distância aproximada entre dois pontos (fórmula de Haversine)."""
+    from math import asin, cos, radians, sin, sqrt
+
+    raio = 6_371_000  # raio médio da Terra, em metros
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * raio * asin(sqrt(a))
+
+
 def mesclar(locais_osm: list[Local], locais_base: list[Local]) -> list[Local]:
     """
     Junta os mercados do OpenStreetMap com os que vieram dos cupons.
 
-    Um mercado da base que já casou com um ponto do OSM não é duplicado.
+    Um mercado da base que já casou com um ponto do OSM (por nome) não é
+    duplicado. Além disso, quando um ponto COM preços (verde) coincide no espaço
+    com um ponto SEM preços (laranja) do OSM, o laranja é descartado: é a mesma
+    loja vista por duas fontes, e mostrar os dois polui o mapa.
     """
     cnpjs_no_mapa = {local.cnpj for local in locais_osm if local.cnpj}
     novos = [local for local in locais_base if local.cnpj not in cnpjs_no_mapa]
-    return locais_osm + novos
+    combinado = locais_osm + novos
+
+    verdes = [local for local in combinado if local.cnpj]
+
+    resultado: list[Local] = []
+    for local in combinado:
+        if local.cnpj:
+            resultado.append(local)
+            continue
+        # Laranja (sem preços): só entra se não estiver colado a um verde.
+        coincide = any(
+            _distancia_metros(local.latitude, local.longitude, v.latitude, v.longitude)
+            <= RAIO_MESMA_LOJA_METROS
+            for v in verdes
+        )
+        if not coincide:
+            resultado.append(local)
+
+    return resultado
 
 
 def importar_area(area: str, caminho_cache: str | Path = "dados/mapa.json",

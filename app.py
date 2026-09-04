@@ -340,6 +340,21 @@ def inicio():
     # completa o mapa.
     todos = mesclar(cache.locais, locais_dos_estabelecimentos(repo))
 
+    # Valores por mercado, para mostrar de forma discreta no mapa e no cartão.
+    # cobertura_minima=0.0 para incluir mesmo quem tem poucos itens da cesta.
+    custos = {c.cnpj: c for c in montar_ranking(repo.precos, cobertura_minima=0.0).estabelecimentos}
+    precos_por_cnpj: dict[str, int] = {}
+    for p in repo.precos:
+        precos_por_cnpj[p.cnpj] = precos_por_cnpj.get(p.cnpj, 0) + 1
+
+    def valores(cnpj: str) -> dict:
+        c = custos.get(cnpj)
+        return {
+            "cesta": round(c.custo_total, 2) if c and c.custo_total > 0 else None,
+            "itens_cesta": c.itens_encontrados if c else 0,
+            "n_precos": precos_por_cnpj.get(cnpj, 0),
+        }
+
     locais = [{
         "nome": local.nome,
         "latitude": local.latitude,
@@ -348,6 +363,8 @@ def inicio():
         "endereco": local.endereco,
         "cnpj": local.cnpj,
         "fonte": local.fonte,
+        "precisao": local.precisao,
+        **(valores(local.cnpj) if local.cnpj else {}),
     } for local in todos]
 
     centro = list(cache.centro) if cache.centro else None

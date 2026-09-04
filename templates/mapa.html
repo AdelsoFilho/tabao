@@ -66,6 +66,16 @@
                     font-size:11px;font-weight:800;padding:1px 6px;white-space:nowrap}
     .etiqueta-preco::before{display:none}   /* remove a setinha do tooltip */
 
+    /* "Como chegar": botões que abrem o app de navegação do celular. */
+    .rota-rotulo{font-size:11px;color:var(--suave);font-weight:800;text-transform:uppercase;
+                 letter-spacing:.04em;margin:2px 0 7px}
+    .rota-apps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .rota-app{display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border-radius:12px;
+              border:1px solid var(--linha);background:#fff;color:var(--tinta);font-size:13.5px;
+              font-weight:600;text-decoration:none}
+    .rota-app:active{background:var(--creme)}
+    .rota-app .ponto{width:9px;height:9px;border-radius:50%;flex:none}
+
     /* Bloco de valores dentro do cartão inferior. */
     .valores-local{background:var(--creme);border-radius:12px;padding:10px 12px;
                    margin-bottom:12px;font-size:13.5px;color:var(--tinta)}
@@ -251,14 +261,31 @@
                 '<div class="coord">📍 ' + coord +
                 ' · <a href="' + mapsUrl + '" target="_blank" rel="noopener">abrir no mapa</a></div></div>';
     }
+    // "Como chegar": links universais que abrem o app de navegação instalado
+    // (no celular) ou a versão web (no computador), já com o destino traçado.
+    const g = "https://www.google.com/maps/dir/?api=1&destination=" + local.latitude + "," + local.longitude;
+    const w = "https://waze.com/ul?ll=" + local.latitude + "," + local.longitude + "&navigate=yes";
+    const a = "https://maps.apple.com/?daddr=" + local.latitude + "," + local.longitude + "&dirflg=d";
+    const navegacao =
+      '<div class="rota-rotulo">Como chegar</div>' +
+      '<div class="rota-apps">' +
+        '<a class="rota-app" href="' + g + '" target="_blank" rel="noopener">' +
+          '<span class="ponto" style="background:#4285F4"></span>Google Maps</a>' +
+        '<a class="rota-app" href="' + w + '" target="_blank" rel="noopener">' +
+          '<span class="ponto" style="background:#33CCFF"></span>Waze</a>' +
+        '<a class="rota-app" href="' + a + '" target="_blank" rel="noopener">' +
+          '<span class="ponto" style="background:#A2AAAD"></span>Apple Maps</a>' +
+      '</div>';
+
+    // Rota interna: além de chegar, diz se COMPENSA (distância + combustível).
     const rota = '<button class="botao secundario" type="button" id="btn-rota" ' +
-                 'style="padding:11px 18px;font-size:14px">Traçar rota</button>';
+                 'style="padding:11px 18px;font-size:14px">Vale a pena ir?</button>';
     const principal = local.cnpj
       ? '<a class="botao" style="padding:11px 18px;font-size:14px" href="/produtos?q=' +
         encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>'
       : '<a class="botao" style="padding:11px 18px;font-size:14px" href="/enviar">Enviar cupom daqui</a>';
 
-    acoes.innerHTML = valores +
+    acoes.innerHTML = valores + navegacao +
                       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
                       principal + rota + '</div>' +
                       '<div id="resumo-rota" style="margin-top:11px"></div>';

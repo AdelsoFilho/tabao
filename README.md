@@ -17,6 +17,7 @@ Atacadista, 15/05/2026, 17 itens, R$ 365,31):
 |---|---|---|
 | Validar a chave de acesso (44 dígitos, módulo 11) | `chave.py` | funcionando |
 | Interpretar a URL do QR Code da NFC-e | `qrcode_nfce.py` | funcionando |
+| Recusar QR Code fora do portal oficial | `qrcode_nfce.py` | **validado em produção** |
 | Ler o QR Code de uma foto | `qrcode_nfce.py` | **validado com foto real** |
 | Consultar a página da SEFAZ | `sefaz.py` | **validado contra o portal real** |
 | Extrair itens, quantidades e preços do HTML | `sefaz.py` | **validado: 17 itens, R$ 365,31 exato** |
@@ -30,9 +31,12 @@ Atacadista, 15/05/2026, 17 itens, R$ 365,31):
 | **Mapa de mercados** | `mapa.py` | **satélite + OpenStreetMap** |
 | **Rota e viabilidade** | `rota.py` | **rota real por ruas (OSRM)** |
 | **Endereço oficial pelo CNPJ** | `cnpj.py` | **funcionando (BrasilAPI)** |
-| **Armazenamento em Postgres** | `banco.py` | escrito; falta testar com o Supabase |
+| **Armazenamento em Postgres** | `banco.py` | **em produção no Supabase** |
 
-71 testes automatizados, todos passando.
+83 testes automatizados, todos passando, rodados a cada push pelo GitHub
+Actions (`.github/workflows/testes.yml`).
+
+Publicado em **https://tabao-chi.vercel.app**.
 
 ---
 
@@ -221,7 +225,9 @@ Sem o passo 1 o portal responde "Sessão Expirada". Está implementado em
 2. **Ampliar o dicionário de produtos.** Cada cupom novo tende a revelar
    abreviações inéditas — foi assim que "FGO" e "CONG" apareceram.
 3. **Outras UFs.** Só a URL de Goiás está cadastrada em
-   `qrcode_nfce.URL_CONSULTA_POR_UF`.
+   `qrcode_nfce.URL_CONSULTA_POR_UF`. Como a trava de origem deriva dessa
+   mesma tabela, um cupom de outro estado é recusado com mensagem explícita
+   em vez de falhar de forma obscura — cadastrar a UF nova é uma linha.
 
 ---
 
@@ -299,64 +305,119 @@ O esquema (`banco.ESQUEMA`) tem três tabelas: `estabelecimentos`, `cupons` e
 `precos`, e é criado sozinho na primeira execução. O histórico continua
 imutável: cada cupom acrescenta linhas e nada é sobrescrito.
 
-Para ligar ao Supabase, copie a *connection string* em Project Settings →
-Database e defina `DATABASE_URL` no painel da Vercel.
+**Em produção desde setembro de 2026.** A `DATABASE_URL` é a *connection
+string* do Supabase em Project Settings → Database, obrigatoriamente a do
+**Transaction pooler** (porta 6543): o pooler não aceita *prepared statements*,
+por isso `banco.py` abre a conexão com `prepare_threshold=None`.
 
-> **Ainda não testado contra um banco real.** O código está escrito e as
-> consultas revisadas, mas sem uma instância do Supabase não dá para garantir
-> que rode de primeira. É o primeiro item a validar.
+A pasta `dados/` está no `.gitignore` e no `.vercelignore`, então o arquivo
+JSON não sobe para a hospedagem. Isso é proposital: se a variável sumir, o app
+não cai silenciosamente num arquivo vazio — ele falha de forma visível.
 
-### Arquivos de publicação já prontos
+### Variáveis de ambiente
+
+Cadastradas no painel da Vercel, em Settings → Environment Variables:
+
+| Variável | Obrigatória | Para quê |
+|---|---|---|
+| `DATABASE_URL` | sim, em produção | Postgres do Supabase (Transaction pooler, porta 6543) |
+| `SECRET_KEY` | **sim, em produção** | assina o cupom entre a conferência e a gravação |
+| `FLASK_DEBUG` | não | `0` em produção |
+| `DADOS_DIR` | não | aponta a base JSON para outro diretório, no uso local |
+
+**Não existe valor padrão para a `SECRET_KEY`, de propósito.** Publicado, o app
+se recusa a subir sem ela; fora de hospedagem, sorteia uma para a execução
+atual. O motivo está na seção de segurança, mais abaixo.
+
+Trocar uma variável só passa a valer no deploy seguinte. Como o deploy é
+disparado pelo `git push`, a ordem correta é: cadastrar a variável primeiro,
+empurrar depois.
+
+### Como publicar uma alteração
+
+```bash
+git push origin main
+```
+
+A Vercel observa o repositório, instala o `requirements.txt` e publica. Não há
+etapa de build (`buildCommand: null`). Um push para outra branch gera uma URL
+de *preview*, apontando para o mesmo banco — é o lugar certo para experimentar
+antes de mexer na `main`.
+
+### Arquivos de publicação
 
 | Arquivo | Para quê |
 |---|---|
-| `Procfile` | comando de execução com gunicorn |
-| `render.yaml` | blueprint do Render: cria o serviço a partir do repositório |
+| `api/index.py` | ponto de entrada serverless: importa o mesmo `app.py` |
+| `vercel.json` | rewrites, `maxDuration` de 60 s e 1 GB de memória |
+| `.vercelignore` | mantém `dados/`, testes e fotos fora da função |
 | `runtime.txt` | versão do Python |
-| `.github/workflows/manter-acordado.yml` | ping periódico contra a hibernação |
-| `.gitignore` | mantém `dados/` e fotos fora do repositório |
+| `.github/workflows/testes.yml` | roda a suíte a cada push |
+| `.github/workflows/manter-acordado.yml` | ping periódico (exige a variável `APP_URL` no repositório) |
+| `Procfile` | execução com gunicorn — não é usado pela Vercel |
 
-Passos: subir o repositório para o GitHub, criar um **Blueprint** no Render
-apontando para ele e definir a variável `APP_URL` nas configurações do
-repositório para o ping funcionar.
+O `Procfile` e o `render.yaml` são de quando o plano era publicar no Render.
+Ficam porque voltam a ser úteis numa eventual migração para hospedagem com
+processo de pé; o texto do `render.yaml` sobre disco efêmero, no entanto, não
+descreve mais o estado do projeto.
 
-O app lê do ambiente: `SECRET_KEY`, `PORT`, `FLASK_DEBUG` e `DADOS_DIR`.
+O ping periódico não existe mais por causa de hibernação — funções serverless
+não hibernam. Ele serve ao Supabase, que pausa projetos gratuitos após 7 dias
+sem consulta.
 
-**Limitação importante do plano gratuito:** o disco do Render é efêmero. A
-pasta `dados/` é apagada a cada reinício, então os preços coletados se perdem.
-Para a apresentação é aceitável — basta reenviar os cupons. Para uso real, é
-preciso migrar o `Repositorio` para Postgres.
+### Limites das camadas gratuitas
 
-### Recomendação
-
-| Camada | Serviço | Limite gratuito | Ressalva |
+| Camada | Serviço | Limite | Ressalva |
 |---|---|---|---|
-| Aplicação | **Render** (web service) | 512 MB RAM, HTTPS e domínio | hiberna após inatividade; a primeira visita demora ~50 s |
-| Banco | **Supabase** (Postgres) | 500 MB, API REST e autenticação | pausa após 7 dias sem consultas |
-| Código | **GitHub** | repositório e Actions | Actions serve para acordar os dois acima |
+| Aplicação | **Vercel** (serverless) | invocações e banda | sem processo em segundo plano nem tarefa agendada |
+| Banco | **Supabase** (Postgres) | 500 MB | pausa após 7 dias sem consultas |
+| Geocodificação e rota | **Nominatim** e **OSRM** públicos | política de uso comunitária | desaconselhados para produção em escala |
+| Código e CI | **GitHub** | repositório e Actions | — |
 
-As duas ressalvas se resolvem com o mesmo truque: uma tarefa agendada no GitHub
-Actions que faz uma requisição ao app a cada poucas horas. Isso mantém o Render
-acordado e reseta o contador de inatividade do Supabase.
+### O que muda quando crescer
 
-### Alternativa sem servidor sempre ligado
+A limitação estrutural da Vercel para este projeto não é preço, é a ausência de
+processo em segundo plano. A consulta à SEFAZ são duas viagens HTTP a um portal
+externo lento, e hoje tudo acontece dentro da requisição do usuário: se o
+portal demora, ele espera; se o portal cai, o app parece quebrado.
 
-Se a hibernação do Render incomodar na apresentação:
+O caminho é tornar a consulta assíncrona — o usuário envia o cupom, recebe
+"estamos lendo" na hora, e um worker consulta e repete em caso de falha. Isso
+exige um processo que fica de pé, o que leva a Railway, Render pago ou um VPS,
+mantendo o Supabase onde está. É aí que o `Procfile` volta a servir.
 
-- **Frontend PWA** em GitHub Pages ou Netlify — estático, sem hibernação.
-- **Raspagem** numa função serverless (Vercel aceita Python no plano gratuito).
-- **Banco** no Supabase, acessado direto do navegador com RLS.
+---
 
-É mais rápido para o usuário, mas exige reescrever a interface em JavaScript.
-Para a entrega acadêmica, Flask no Render é bem menos trabalho.
+## Segurança: por que a origem do QR Code é conferida
 
-### Migração do JSON para o banco
+O argumento central do projeto é que o preço vem de uma fonte oficial e pode
+ser reconferido por qualquer pessoa. Essa promessa depende de uma coisa que não
+é óbvia: **a URL do QR Code é escolhida por quem envia o cupom.**
 
-Hoje tudo vive em `dados/precos.json`, o que basta para um usuário. Para vários,
-a troca é localizada: só a classe `Repositorio` conhece o armazenamento. Trocar
-o corpo de `carregar`/`salvar`/`registrar_cupom` por consultas SQL não afeta
-nenhum outro módulo — foi por isso que o repositório ficou isolado desde o
-começo.
+Até setembro de 2026 ela era aceita sem conferência, e o `consultar_por_qrcode`
+montava o endereço da segunda requisição a partir do domínio recebido. Bastava
+apontar o parâmetro `p` para um servidor próprio, devolver um HTML com a cara
+de DANFE e o preço inventado entrava na base carregando o selo de "conferido na
+fonte oficial". De quebra, o servidor buscava qualquer endereço que pedissem,
+inclusive interno.
+
+Hoje `ORIGENS_POR_UF` lista as origens aceitas, derivadas das próprias tabelas
+de URL de consulta para não existir uma segunda lista a manter em sincronia. A
+conferência olha **esquema e domínio juntos** — exigir HTTPS impede rebaixar a
+consulta no mesmo domínio e interceptá-la — e cruza com a **UF lida da chave de
+acesso**: não basta estar na lista, precisa ser o portal do estado que emitiu
+aquela nota. A trava se repete dentro de `consultar_por_qrcode`, antes de
+qualquer requisição, porque a linha de comando chama essa função direto.
+
+A `SECRET_KEY` faz parte da mesma correção, e sozinha nenhuma das duas
+resolveria. A rota `/confirmar` grava o que vier dentro do token assinado, sem
+reconsultar a SEFAZ — com uma chave fixa publicada junto do código, daria para
+forjar o token e pular a validação do QR Code inteira. Por isso o valor padrão
+deixou de existir.
+
+Um dos testes troca `requests.Session` por uma função que levanta
+`AssertionError`: a recusa precisa acontecer **antes** da requisição, e a ordem
+fica travada por teste, não por convenção.
 
 ---
 
@@ -392,29 +453,37 @@ A navegação segue o padrão de aplicativo móvel, não de página informativa:
 ```
 tabao/
 ├── app.py                 interface web (Flask)
+├── api/index.py           ponto de entrada serverless da Vercel
 ├── templates/             telas da interface web
 ├── static/
 │   ├── manifest.json      declaração do PWA
 │   ├── sw.js              service worker (cache e offline)
 │   ├── icones/            ícones do aplicativo
-│   └── vendor/            Leaflet (local, sem CDN)
+│   └── vendor/            Leaflet e leitor de QR Code (local, sem CDN)
 ├── cli.py                 interface de terminal
-├── requirements.txt
+├── verificar_banco.py     diagnóstico da conexão com o Postgres
+├── esquema.sql            as três tabelas, para criar à mão se preciso
+├── requirements.txt       produção (sem OpenCV, por causa do limite da função)
+├── requirements-dev.txt   produção + OpenCV + pytest
 ├── tabao/
 │   ├── chave.py           chave de acesso: validação e decomposição
-│   ├── qrcode_nfce.py     leitura e interpretação do QR Code
+│   ├── qrcode_nfce.py     QR Code: interpretação e trava de origem oficial
 │   ├── sefaz.py           consulta HTTP + extração do HTML
 │   ├── mapa.py            OpenStreetMap: Overpass e Nominatim
+│   ├── cnpj.py            endereço oficial pelo CNPJ (BrasilAPI)
+│   ├── rota.py            trajeto real por ruas (OSRM) e viabilidade
 │   ├── produtos.py        normalização e classificação na cesta
 │   ├── categorias.py      categorização de todos os produtos
 │   ├── modelos.py         Cupom, ItemCupom, PrecoObservado
 │   ├── repositorio.py     fila, base JSON, matriz
+│   ├── banco.py           mesma interface do repositório, sobre Postgres
 │   ├── estatistica.py     medidas, atípicos, confiança bayesiana
 │   └── cesta.py           custo da cesta e ranking
 ├── tests/
-│   ├── test_tabao.py      66 testes
+│   ├── test_tabao.py      83 testes
 │   └── fixtures/          página real da SEFAZ + cupom transcrito
-└── dados/precos.json      base coletada (gerada em tempo de execução)
+├── dados_iniciais/        mercados do OpenStreetMap, versionados
+└── dados/precos.json      base local (só quando não há DATABASE_URL)
 ```
 
 ---

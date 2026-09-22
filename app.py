@@ -10,6 +10,7 @@ o resultado.
 
 import json
 import os
+import secrets
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -39,8 +40,47 @@ from tabao.repositorio import Repositorio, matriz_precos
 
 app = Flask(__name__)
 
-# Em produção a chave vem do ambiente; o valor local só serve para desenvolver.
-app.secret_key = os.environ.get("SECRET_KEY", "tabao-desenvolvimento")
+# Hospedagens que definem essa variável por conta própria. Serve só para
+# distinguir "está publicado" de "está na máquina de alguém".
+MARCAS_DE_HOSPEDAGEM = ("VERCEL", "RENDER", "RAILWAY_ENVIRONMENT", "DYNO")
+
+
+def _chave_secreta() -> str:
+    """
+    Chave que assina o cupom entre a conferência e a gravação.
+
+    Não existe valor padrão de propósito. A rota /confirmar grava o que vier
+    dentro do token assinado, sem reconsultar a SEFAZ: com uma chave fixa e
+    publicada junto do código, qualquer pessoa forjaria um cupom com os preços
+    que quisesse e o gravaria na base, sem nunca passar por um QR Code.
+
+    Publicado, a ausência da variável é erro de configuração e o aplicativo se
+    recusa a subir. Fora de hospedagem, sorteia uma chave para a execução
+    atual: o desenvolvimento segue funcionando e nada assinado sobrevive ao
+    reinício.
+    """
+    chave = os.environ.get("SECRET_KEY", "").strip()
+    if chave:
+        return chave
+
+    hospedagem = next((n for n in MARCAS_DE_HOSPEDAGEM if os.environ.get(n)), None)
+    if hospedagem:
+        raise RuntimeError(
+            f"SECRET_KEY não está definida e {hospedagem} foi detectado. "
+            'Gere uma chave com \'python -c "import secrets; '
+            "print(secrets.token_urlsafe(48))\"' e cadastre nas variáveis de "
+            "ambiente da hospedagem."
+        )
+
+    print(
+        "AVISO: SECRET_KEY não definida. Usando chave sorteada para esta "
+        "execução; cupons em conferência não sobrevivem ao reinício.",
+        file=sys.stderr,
+    )
+    return secrets.token_urlsafe(48)
+
+
+app.secret_key = _chave_secreta()
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB por foto
 
 # DADOS_DIR permite apontar para um disco persistente na hospedagem.

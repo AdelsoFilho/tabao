@@ -93,6 +93,98 @@ def test_url_sem_parametro_p_e_rejeitada():
 
 
 # --------------------------------------------------------------------------
+# Origem do QR Code
+#
+# A URL vem de quem envia o cupom. Se qualquer endereço fosse aceito, bastaria
+# hospedar um DANFE forjado para injetar preços inventados na base com o selo
+# de "conferido na SEFAZ" — o que anularia a própria premissa do projeto.
+# --------------------------------------------------------------------------
+
+def test_qrcode_apontando_para_dominio_qualquer_e_rejeitado():
+    url = f"https://sefaz-goias.exemplo.com/nfeweb/sites/nfce/danfeNFCe?p={CHAVE_REAL}|2|1"
+    with pytest.raises(QRCodeInvalidoError, match="não é o portal da SEFAZ"):
+        interpretar_url(url)
+
+
+def test_dominio_que_apenas_termina_parecido_e_rejeitado():
+    """nfeweb.sefaz.go.gov.br.exemplo.com pertence a exemplo.com, não à SEFAZ."""
+    url = f"https://nfeweb.sefaz.go.gov.br.exemplo.com/?p={CHAVE_REAL}|2|1"
+    with pytest.raises(QRCodeInvalidoError, match="não é o portal da SEFAZ"):
+        interpretar_url(url)
+
+
+def test_mesmo_dominio_em_http_e_rejeitado():
+    """Rebaixar para HTTP permitiria interceptar a consulta no caminho."""
+    url = f"http://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe?p={CHAVE_REAL}|2|1"
+    with pytest.raises(QRCodeInvalidoError, match="não é o portal da SEFAZ"):
+        interpretar_url(url)
+
+
+def test_portal_de_homologacao_continua_aceito():
+    url = (
+        "https://nfewebhomolog.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe"
+        f"?p={CHAVE_REAL}|2|2"
+    )
+    assert interpretar_url(url).chave == CHAVE_REAL
+
+
+def test_consulta_recusa_origem_nao_oficial_sem_tocar_na_rede(monkeypatch):
+    """A trava precisa agir antes da requisição, não depois."""
+    import requests
+
+    def nao_deveria_chamar(*args, **kwargs):
+        raise AssertionError("a consulta não pode sair para a rede")
+
+    monkeypatch.setattr(requests, "Session", nao_deveria_chamar)
+
+    url = f"https://servidor-do-atacante.exemplo/?p={CHAVE_REAL}|2|1"
+    with pytest.raises(sefaz.ConsultaSEFAZError, match="não é o portal da SEFAZ"):
+        sefaz.consultar_por_qrcode(url, CHAVE_REAL)
+
+
+# --------------------------------------------------------------------------
+# Chave de assinatura do cupom
+#
+# A rota /confirmar grava o que vier dentro do token assinado, sem reconsultar
+# a SEFAZ. Uma chave fixa e publicada junto do código deixaria qualquer pessoa
+# forjar um cupom e gravá-lo sem passar por um QR Code.
+# --------------------------------------------------------------------------
+
+def _limpar_hospedagem(monkeypatch):
+    import app as aplicacao
+
+    for nome in aplicacao.MARCAS_DE_HOSPEDAGEM:
+        monkeypatch.delenv(nome, raising=False)
+    return aplicacao
+
+
+def test_chave_do_ambiente_e_usada_como_esta(monkeypatch):
+    aplicacao = _limpar_hospedagem(monkeypatch)
+    monkeypatch.setenv("SECRET_KEY", "chave-vinda-do-painel")
+    assert aplicacao._chave_secreta() == "chave-vinda-do-painel"
+
+
+def test_publicado_sem_chave_o_app_se_recusa_a_subir(monkeypatch):
+    aplicacao = _limpar_hospedagem(monkeypatch)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        aplicacao._chave_secreta()
+
+
+def test_fora_de_hospedagem_sorteia_chave_diferente_a_cada_execucao(monkeypatch):
+    aplicacao = _limpar_hospedagem(monkeypatch)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    primeira = aplicacao._chave_secreta()
+    segunda = aplicacao._chave_secreta()
+
+    assert primeira != segunda
+    assert len(primeira) >= 32
+    assert "tabao-desenvolvimento" not in (primeira, segunda)
+
+
+# --------------------------------------------------------------------------
 # Extração da página da SEFAZ
 # --------------------------------------------------------------------------
 

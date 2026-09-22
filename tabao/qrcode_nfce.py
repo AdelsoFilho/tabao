@@ -35,6 +35,31 @@ AMBIENTE_PRODUCAO = "1"
 AMBIENTE_HOMOLOGACAO = "2"
 
 
+def _origem(url: str) -> str:
+    """Esquema e domínio de uma URL, em minúsculas: "https://host"."""
+    partes = urlparse(url)
+    return f"{(partes.scheme or '').lower()}://{(partes.hostname or '').lower()}"
+
+
+def _origens_oficiais() -> dict:
+    """Deriva as origens aceitas das tabelas de URL, para não haver duas listas."""
+    tabela: dict = {}
+    for fonte in (URL_CONSULTA_POR_UF, URL_CONSULTA_HOMOLOGACAO):
+        for uf, url in fonte.items():
+            tabela.setdefault(uf, set()).add(_origem(url))
+    return tabela
+
+
+# Origens oficiais aceitas, por unidade da federação.
+#
+# A URL do QR Code é escolhida por quem envia o cupom, e não é fonte confiável
+# de endereço. Sem esta trava bastaria apontar o parâmetro "p" para um servidor
+# próprio, devolver um DANFE forjado e o preço inventado entraria na base
+# carregando o selo de "conferido na fonte oficial" — que é exatamente o que o
+# projeto promete e o que o torna diferente dos aplicativos de digitação.
+ORIGENS_POR_UF = _origens_oficiais()
+
+
 class QRCodeInvalidoError(ValueError):
     """Levantada quando o conteúdo lido não é um QR Code de NFC-e válido."""
 
@@ -62,6 +87,31 @@ class QRCodeNFCe:
     def url_consulta(self) -> str:
         """URL da página da SEFAZ que exibe esta nota."""
         return self.url_original
+
+
+def conferir_origem_oficial(url: str, uf: str) -> None:
+    """
+    Recusa a URL que não apontar para o portal da SEFAZ daquela unidade da
+    federação.
+
+    Confere esquema e domínio juntos: exigir HTTPS impede rebaixar a consulta
+    para HTTP no mesmo domínio e interceptá-la no caminho. A UF vem da chave de
+    acesso, não da URL, de modo que não basta estar na lista — precisa ser o
+    portal do estado que emitiu aquela nota.
+    """
+    permitidas = ORIGENS_POR_UF.get(uf)
+    if not permitidas:
+        raise QRCodeInvalidoError(
+            f"Ainda não há portal da SEFAZ cadastrado para a UF {uf}."
+        )
+
+    origem = _origem(url)
+    if origem not in permitidas:
+        esperadas = ", ".join(sorted(permitidas))
+        raise QRCodeInvalidoError(
+            f"O QR Code aponta para {origem}, que não é o portal da SEFAZ de "
+            f"{uf}. Esperado: {esperadas}."
+        )
 
 
 def interpretar_url(url: str) -> QRCodeNFCe:
@@ -103,6 +153,9 @@ def interpretar_url(url: str) -> QRCodeNFCe:
         raise QRCodeInvalidoError(
             f"O documento não é uma NFC-e (modelo {dados.modelo}, esperado 65)."
         )
+
+    # Só agora, com a UF lida da chave, dá para saber qual portal é o legítimo.
+    conferir_origem_oficial(url, dados.uf)
 
     return QRCodeNFCe(
         url_original=url,

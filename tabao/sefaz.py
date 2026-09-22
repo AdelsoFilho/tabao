@@ -23,7 +23,9 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from .chave import ChaveInvalidaError, interpretar
 from .modelos import Cupom, Estabelecimento, ItemCupom
+from .qrcode_nfce import QRCodeInvalidoError, conferir_origem_oficial
 
 TEMPO_LIMITE_SEGUNDOS = 20
 
@@ -313,6 +315,16 @@ def consultar_por_qrcode(url_qrcode: str, chave: str,
     o endpoint interno entrega os itens. Diferente da consulta por chave
     digitada, ele não é protegido por captcha.
     """
+    # Antes de qualquer requisição: `base` sai do endereço que o usuário
+    # mandou, então sem esta conferência o servidor buscaria o que pedissem —
+    # inclusive um DANFE forjado ou um endereço interno da infraestrutura.
+    # `interpretar_url` já barra isso no caminho da web; aqui a trava se repete
+    # porque a linha de comando e os testes chamam esta função direto.
+    try:
+        conferir_origem_oficial(url_qrcode, interpretar(chave).uf)
+    except (QRCodeInvalidoError, ChaveInvalidaError) as erro:
+        raise ConsultaSEFAZError(str(erro)) from erro
+
     try:
         import requests
     except ImportError as erro:  # pragma: no cover

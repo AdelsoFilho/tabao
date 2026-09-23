@@ -12,6 +12,7 @@ um antigo. Isso preserva a série temporal que dá valor à base.
 """
 
 import json
+import re
 from collections import deque
 from dataclasses import asdict
 from dataclasses import dataclass
@@ -260,12 +261,34 @@ class Repositorio:
         return dict(sorted(contagem.items(), key=lambda kv: -kv[1]))
 
     def buscar_produto(self, termo: str) -> list[PrecoObservado]:
-        """Busca livre na descrição dos produtos, sem acento e sem caixa."""
-        from .produtos import normalizar
+        """
+        Busca na descrição dos produtos, sem acento e sem caixa.
+
+        Quando o termo é o nome de um item da cesta ("leite", "arroz"), a busca
+        usa a classificação já gravada em cada preço, e não o texto solto. Sem
+        isso, procurar por "leite" trazia "PAO LEITE" e "CAFE COM LEITE" — e a
+        estatística no topo da página (mínimo, mediana, máximo) era calculada
+        sobre esses intrusos. Para os demais termos, casa por limite de palavra,
+        o que evita que "cafe" traga "NESCAFE".
+        """
+        from .produtos import CESTA_BASICA, PALAVRAS_CHAVE, normalizar
+
         alvo = normalizar(termo)
         if not alvo:
             return []
-        return [p for p in self._precos if alvo in normalizar(p.descricao_original)]
+
+        # O termo é o nome de um item da cesta? (ex.: "leite", "arroz", "café")
+        # Nesse caso, filtra pela classificação já gravada, não pelo texto solto.
+        for item, (nome, _q, _u) in CESTA_BASICA.items():
+            nomes = {normalizar(item), normalizar(nome)} | PALAVRAS_CHAVE[item]
+            if alvo in nomes:
+                return [p for p in self._precos if p.item_cesta == item]
+
+        # Busca livre: casa por limite de palavra, para "cafe" não trazer
+        # "NESCAFE" nem "arroz" trazer o miolo de outra palavra.
+        padrao = re.compile(r"\b" + re.escape(alvo))
+        return [p for p in self._precos
+                if padrao.search(normalizar(p.descricao_original))]
 
 
 # --------------------------------------------------------------------------

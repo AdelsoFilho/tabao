@@ -32,51 +32,79 @@ CESTA_BASICA = {
     "manteiga": ("Manteiga", 0.75, "kg"),
 }
 
-# Palavras que identificam cada item. Basta uma para classificar.
+# Palavras que identificam cada item. Inclui as abreviações que o cupom fiscal
+# realmente grava — "MANT" para manteiga, "FEIJ" para feijão, "ARR" para arroz —
+# porque sem elas o produto certo fica invisível na base.
 PALAVRAS_CHAVE = {
-    "arroz": {"ARROZ"},
-    "feijao": {"FEIJAO"},
+    "arroz": {"ARROZ", "ARR"},
+    "feijao": {"FEIJAO", "FEIJ"},
     "carne": {"CARNE", "ACEM", "PATINHO", "COXAO", "MUSCULO", "ALCATRA", "PEITO"},
     "leite": {"LEITE"},
     "pao": {"PAO"},
     "cafe": {"CAFE"},
-    "acucar": {"ACUCAR"},
+    "acucar": {"ACUCAR", "ACUC"},
     "oleo": {"OLEO"},
     "banana": {"BANANA"},
     "tomate": {"TOMATE"},
     "batata": {"BATATA"},
     "farinha": {"FARINHA"},
-    "manteiga": {"MANTEIGA"},
+    "manteiga": {"MANTEIGA", "MANT"},
 }
 
+# Abreviações curtas e ambíguas que só valem quando são a palavra INTEIRA. Sem
+# isso, "MANT" casaria dentro de "MANTA" (bacon manta) e "ARR" dentro de nomes
+# de marca. As demais chaves casam como prefixo ("ACUCAR" acha "ACUCAR CRISTAL").
+CHAVE_SO_PALAVRA_INTEIRA = {"ARR", "FEIJ", "ACUC", "MANT", "PEITO"}
+
+# A palavra-chave precisa estar entre as primeiras palavras da descrição. É o
+# que distingue o produto do sabor: em "PIPOCA ... MANTEIGA CINE", a manteiga é
+# só o sabor — o produto é pipoca, e por isso não entra na cesta.
+JANELA_CABECA = 3
+
 # Palavras que, se presentes, impedem a classificação — evitam que
-# "LEITE DE COCO" vire leite ou que "BATATA PALHA" vire batata.
+# "PAO DE ALHO" vire pão francês ou que "OLEO ESSENCIAL" vire óleo de cozinha.
+# Só são conferidas depois que a palavra-chave já casou, então cada lista só
+# afeta o seu próprio item.
 EXCLUSOES = {
-    "arroz": {"DOCE", "SABONETE"},
+    # "MAC"/"ESPAGUETE": "MAC ARROZ ESPAGUETE" é macarrão, não arroz.
+    "arroz": {"DOCE", "SABONETE", "MAC", "MACARRAO", "ESPAGUETE"},
     "feijao": {"TROPEIRO", "ENLATADO", "CONSERVA"},
     # "FGO" e "FRG" sao abreviacoes de frango usadas nos cupons reais; a cesta
     # do Decreto-Lei 399/1938 considera carne bovina.
     "carne": {"SECA", "SOJA", "FRANGO", "FGO", "FRG", "AVE", "SUINA", "PORCO",
               "PEIXE", "LINGUICA", "SALSICHA", "HAMBURGUER", "EMPANAD"},
-    "leite": {"COCO", "CONDENSADO", "PO", "FERMENTADO", "DE MAGNESIA"},
-    "pao": {"DOCE", "QUEIJO", "FORMA", "MEL", "RALADO", "BISNAGUINHA"},
-    "cafe": {"CAPSULA", "SOLUVEL", "FILTRO", "CAFETEIRA"},
+    "leite": {"COCO", "CONDENSADO", "PO", "FERMENTADO", "MAGNESIA"},
+    # Pão de alho, de queijo e de forma são pães, mas não o pão francês da cesta.
+    # "QJO"/"ALH" são as abreviações que aparecem no cupom.
+    "pao": {"DOCE", "QUEIJO", "QJO", "QIJO", "FORMA", "FOR", "MEL", "RALADO",
+            "BISNAGUINHA", "ALHO", "ALH", "SUPREME"},
+    # "CAPP" (cappuccino), "DOLCE GUSTO" (cápsula) e "COM LEITE" não são café em
+    # pó; entram como categoria bebidas, mas não no indicador da cesta.
+    "cafe": {"CAPSULA", "CAPPUCCINO", "CAPP", "SOLUVEL", "FILTRO", "CAFETEIRA",
+             "DOLCE", "GUSTO", "3EM1", "MOCHA", "COM LEITE"},
     "acucar": {"ADOCANTE", "CONFEITEIRO"},
-    "oleo": {"MOTOR", "CORPORAL", "COZINHA SPRAY", "DIESEL"},
+    # "ESSEN": óleo essencial (aromaterapia), não óleo de cozinha.
+    "oleo": {"MOTOR", "CORPORAL", "SPRAY", "DIESEL", "ESSENCIAL", "ESSEN"},
     "banana": {"DOCE", "CHIPS", "PASSA"},
     "tomate": {"MOLHO", "EXTRATO", "SECO", "PELADO", "SACHE", "POLPA", "KETCHUP"},
     # "CONG" (congelada), "PALITO" e "SMILE" identificam batata processada, que
     # custa cerca do dobro da in natura e distorceria o custo da cesta.
     # A abreviacao "CONG" foi encontrada em cupom real: "BATATA CONG UAI ... 2kg".
     "batata": {"PALHA", "FRITA", "CHIPS", "DOCE", "PURE", "CONGELADA", "CONG",
-               "PALITO", "SMILE", "NOISETTE", "PRE FRITA"},
+               "PALITO", "SMILE", "NOISETTE"},
     "farinha": {"MANDIOCA", "ROSCA", "MILHO", "AVEIA", "LACTEA"},
-    "manteiga": {"CACAU", "GARRAFA", "AMENDOIM"},
+    # "MANTA" é corte de bacon; a chave "MANT" já é palavra inteira, mas a
+    # exclusão reforça que "BACON MANTA" nunca conte como manteiga.
+    "manteiga": {"CACAU", "GARRAFA", "AMENDOIM", "MANTA"},
 }
 
 # Unidades reconhecidas nas descrições, para extrair o peso/volume da embalagem.
+#
+# O limite de palavra (\b) antes do número é essencial: sem ele, o "3" de "OF3"
+# (código de oferta em "TOMATE SALADET OF3 KG") era lido como 3 kg, e o preço
+# do tomate saía dividido por três.
 _PADRAO_EMBALAGEM = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(KG|G|GR|GRAMAS?|L|LT|LITROS?|ML)\b"
+    r"\b(\d+(?:[.,]\d+)?)\s*(KG|G|GR|GRAMAS?|L|LT|LITROS?|ML)\b"
 )
 
 
@@ -139,13 +167,47 @@ def extrair_embalagem(descricao: str) -> tuple[float, str] | None:
     return None
 
 
+def _chave_casa(palavra: str, chave: str) -> bool:
+    """
+    Diz se uma palavra da descrição corresponde a uma palavra-chave.
+
+    Abreviações ambíguas ("MANT", "ARR") só valem como palavra inteira; as
+    demais valem como prefixo, para que "ACUCAR" alcance "ACUCARADO" e "PAO"
+    alcance "PAOZINHO". Como o casamento é palavra a palavra, "CAFE" nunca
+    alcança "NESCAFE" e "MANTEIGA" nunca alcança o meio de outra palavra.
+    """
+    if chave in CHAVE_SO_PALAVRA_INTEIRA:
+        return palavra == chave
+    return palavra == chave or palavra.startswith(chave)
+
+
+def _tem_exclusao(palavras: list[str], texto: str, exclusoes: set[str]) -> bool:
+    """Verifica as exclusões: palavras inteiras, ou expressões com espaço."""
+    conjunto = set(palavras)
+    for e in exclusoes:
+        if " " in e:
+            if e in texto:
+                return True
+        elif e in conjunto:
+            return True
+    return False
+
+
 def classificar(descricao: str) -> Classificacao:
     """
     Decide a qual item da cesta básica uma descrição pertence.
 
-    A regra é uma proposição simples, avaliada para cada item:
+    A decisão tem três partes, e cada uma corrige um erro real observado na
+    base em produção:
 
-        pertence(item) := existe_palavra_chave(item) E NAO existe_exclusao(item)
+    1. A palavra-chave casa palavra a palavra, com limite de palavra, e não como
+       pedaço de texto. Sem isso, "NESCAFE" virava café e "MANTEIGA" dentro de
+       outra descrição virava manteiga.
+    2. A palavra-chave precisa estar entre as primeiras palavras (a cabeça da
+       descrição). É o que distingue o produto do seu sabor: em "PIPOCA ...
+       MANTEIGA CINE" a cabeça é pipoca, então não é manteiga. Quando duas
+       chaves aparecem na cabeça, vence a mais à esquerda: "PAO LEITE" é pão.
+    3. Só então as exclusões entram, para separar "PAO DE ALHO" do pão francês.
 
     Devolve item None quando o produto não faz parte da cesta, o que é o caso
     da maioria das linhas de um cupom real.
@@ -154,22 +216,27 @@ def classificar(descricao: str) -> Classificacao:
     if not texto:
         return Classificacao(None, None, texto)
 
-    palavras = set(texto.split())
+    palavras = texto.split()
+    cabeca = palavras[:JANELA_CABECA]
+
+    melhor_posicao = len(cabeca)
+    melhor_item: str | None = None
 
     for item, chaves in PALAVRAS_CHAVE.items():
-        # A palavra-chave pode aparecer isolada ou dentro do texto
-        # (ex.: "ACUCAR" em "ACUCAR CRISTAL").
-        tem_chave = bool(palavras & chaves) or any(c in texto for c in chaves)
-        if not tem_chave:
-            continue
+        for posicao, palavra in enumerate(cabeca):
+            if posicao >= melhor_posicao:
+                break
+            if any(_chave_casa(palavra, c) for c in chaves):
+                melhor_posicao, melhor_item = posicao, item
+                break
 
-        exclusoes = EXCLUSOES.get(item, set())
-        if any(e in texto for e in exclusoes):
-            continue
+    if melhor_item is None:
+        return Classificacao(None, None, texto)
 
-        return Classificacao(item, CESTA_BASICA[item][0], texto)
+    if _tem_exclusao(palavras, texto, EXCLUSOES.get(melhor_item, set())):
+        return Classificacao(None, None, texto)
 
-    return Classificacao(None, None, texto)
+    return Classificacao(melhor_item, CESTA_BASICA[melhor_item][0], texto)
 
 
 def preco_por_unidade_padrao(descricao: str, preco_pago: float,

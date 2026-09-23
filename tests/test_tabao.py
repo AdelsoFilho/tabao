@@ -285,6 +285,97 @@ def test_preco_por_quilo_torna_embalagens_comparaveis():
 
 
 # --------------------------------------------------------------------------
+# Classificação: casos reais da base em produção
+#
+# Descrições exatas coletadas em produção (rede VMS Supermercados e outras,
+# diferentes da rede do cupom de teste). Antes da correção de fronteira de
+# palavra, todas as cinco primeiras eram classificadas erradas e infladas o
+# custo da cesta publicado no app.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("descricao", [
+    "PIPOCA MICROONDAS SINHA 90GR MANTEIGA CINE",  # sabor manteiga, é pipoca
+    "PAO ALH CUISI 300g UN",                       # pão de alho, não francês
+    "PAO ALHO ZINHO 300 UN",
+    "OLEO ESSEN CIT 120ML",                        # óleo essencial, não de soja
+    "OLEO ESSEN EUC 120ML",
+    "NESCAFE DOLCE GUSTO MOCHA 216GR",             # CAFE no meio de NESCAFE
+    "CAFE COM LEITE GRAO",                         # café com leite, não leite
+    "MAC ARROZ ESPAGUETE",                         # macarrão, não arroz
+    "PAO DE QJO FORNEART TRAD 400G",               # pão de queijo
+    "PAO DE FORMA TRADICI",                        # pão de forma
+])
+def test_nao_confunde_sabor_e_qualificador_com_produto(descricao):
+    assert prod.classificar(descricao).item is None
+
+
+@pytest.mark.parametrize("descricao,esperado", [
+    # Abreviações que o cupom fiscal grava e que antes ficavam invisíveis.
+    ("MANT S SAL CARREFOUR", "manteiga"),
+    ("FEIJ CAR KICALDO 1kg", "feijao"),
+    ("ARR TIO JORGE T1 5kg", "arroz"),
+    ("ACUC UNIAO REFINADO", "acucar"),
+])
+def test_reconhece_abreviacoes_reais_do_cupom(descricao, esperado):
+    assert prod.classificar(descricao).item == esperado
+
+
+def test_abreviacao_curta_so_vale_como_palavra_inteira():
+    # "MANT" é manteiga, mas "MANTA" (corte de bacon) não pode virar manteiga.
+    assert prod.classificar("MANT S SAL").item == "manteiga"
+    assert prod.classificar("BACON MANTA AURORA PED kg").item is None
+
+
+def test_chave_mais_a_esquerda_vence():
+    # "PAO LEITE": as duas chaves aparecem, mas a cabeça é pão.
+    assert prod.classificar("PAO LEITE SEVEN BOYS").item == "pao"
+
+
+def test_codigo_de_oferta_nao_e_lido_como_peso():
+    # "OF3" é código de oferta; sem a correção, virava embalagem de 3 kg e o
+    # preço do tomate saía dividido por três.
+    assert prod.extrair_embalagem("TOMATE SALADET OF3 KG") is None
+    # Pesos de verdade continuam sendo lidos.
+    assert prod.extrair_embalagem("ARROZ CRISTAL 5KG") == (5.0, "kg")
+    assert prod.extrair_embalagem("MANDIOCA PC 800G VACUO") == (0.8, "kg")
+
+
+# --------------------------------------------------------------------------
+# Busca de produto
+# --------------------------------------------------------------------------
+
+def _repo_com(descricoes, tmp_path):
+    """Repositório em memória com uma observação por descrição, já classificada."""
+    repo = Repositorio(tmp_path / "vazio.json")
+    for i, d in enumerate(descricoes):
+        repo._precos.append(PrecoObservado(
+            descricao_original=d, cnpj=f"{i:014d}", nome_estabelecimento="Loja",
+            preco=9.9, unidade="un", observado_em=datetime(2026, 9, 1),
+            chave_cupom=f"k{i}", item_cesta=prod.classificar(d).item,
+        ))
+    return repo
+
+
+def test_busca_por_item_da_cesta_ignora_intrusos(tmp_path):
+    repo = _repo_com([
+        "LEITE UHT ITALAC INT 1L",
+        "PAO LEITE SEVEN BOYS",       # pão de leite: não pode entrar
+        "CAFE COM LEITE GRAO",        # café: não pode entrar
+    ], tmp_path)
+    achados = {p.descricao_original for p in repo.buscar_produto("leite")}
+    assert achados == {"LEITE UHT ITALAC INT 1L"}
+
+
+def test_busca_livre_respeita_limite_de_palavra(tmp_path):
+    repo = _repo_com([
+        "CAFE MOINHO FINO EXTRA FORTE 250G",
+        "NESCAFE DOLCE GUSTO MOCHA 216GR",   # CAFE no meio: não pode entrar
+    ], tmp_path)
+    achados = {p.descricao_original for p in repo.buscar_produto("cafe")}
+    assert achados == {"CAFE MOINHO FINO EXTRA FORTE 250G"}
+
+
+# --------------------------------------------------------------------------
 # Estatística
 # --------------------------------------------------------------------------
 

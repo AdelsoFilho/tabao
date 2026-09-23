@@ -118,6 +118,20 @@ def _primeiro_valor(no, *classes: str) -> str:
     return ""
 
 
+def _normalizar_unidade(bruto: str) -> str:
+    """
+    Deixa só a sigla da unidade, sem rótulo e sem código colado.
+
+    Alguns emissores trazem a unidade com um número grudado ("KG1", "UN1") ou
+    com o rótulo "UN:" na frente. Depois daqui sobra apenas "KG", "UN", "L".
+    Quando não resta nada reconhecível, assume "UN".
+    """
+    texto = (bruto or "").strip().upper()
+    texto = re.sub(r"\d+$", "", texto).strip()          # "KG1" -> "KG"
+    texto = re.sub(r"^UN\.?:?\s*", "", texto).strip()   # remove o rótulo "UN:"
+    return texto or "UN"
+
+
 def _extrair_itens(sopa: BeautifulSoup) -> list[ItemCupom]:
     """
     Lê a tabela de produtos da página.
@@ -146,8 +160,7 @@ def _extrair_itens(sopa: BeautifulSoup) -> list[ItemCupom]:
         valor_total = _numero(_primeiro_valor(linha, "valor", "vlTotal"))
         codigo = _primeiro_valor(linha, "RCod", "cod")
 
-        # Limpa os rótulos que vêm colados ao valor no HTML do portal.
-        unidade = re.sub(r"(?i)^un\.?:?\s*", "", unidade).strip() or "UN"
+        unidade = _normalizar_unidade(unidade)
         codigo_digitos = re.sub(r"\D", "", codigo)
 
         if quantidade <= 0:

@@ -36,7 +36,7 @@
       <div class="corpo">
         <div class="titulo" style="white-space:normal">{{ linha.item.descricao }}</div>
         <div class="detalhe">
-          {{ "%.3f"|format(linha.item.quantidade) }} {{ linha.item.unidade }} ·
+          {{ linha.item.quantidade|qtd }} {{ linha.item.unidade }} ·
           {{ linha.categoria }}
           {%- if linha.cesta %} · <span style="color:var(--verde);font-weight:600">{{ linha.cesta }}</span>{% endif %}
         </div>

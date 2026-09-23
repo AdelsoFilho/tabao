@@ -160,6 +160,23 @@ def filtro_data(valor) -> str:
     return "—"
 
 
+@app.template_filter("qtd")
+def filtro_qtd(valor) -> str:
+    """
+    Formata a quantidade no padrão brasileiro.
+
+    Uma unidade inteira vira "1" (e não "1,000", que se leria como mil); um peso
+    fracionado vira "1,406", com vírgula decimal e sem zeros sobrando.
+    """
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return "—"
+    if numero == int(numero):
+        return str(int(numero))
+    return f"{numero:.3f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
 # --------------------------------------------------------------------------
 # Páginas
 # --------------------------------------------------------------------------

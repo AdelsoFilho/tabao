@@ -341,6 +341,44 @@ def test_codigo_de_oferta_nao_e_lido_como_peso():
 
 
 # --------------------------------------------------------------------------
+# Unidade de medida
+#
+# O HTML de alguns emissores (Atacadão Costa, cupom real) traz a unidade com um
+# número colado — "KG1", "UN1" — que aparecia grudado na tela.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bruto,esperado", [
+    ("KG1", "KG"),
+    ("UN1", "UN"),
+    ("KG", "KG"),
+    ("UN", "UN"),
+    ("VD", "VD"),
+    ("UN: KG", "KG"),      # rótulo colado
+    ("UN: KG1", "KG"),     # rótulo e código, juntos
+    ("", "UN"),            # vazio assume unidade
+])
+def test_normaliza_unidade_sem_lixo(bruto, esperado):
+    assert sefaz._normalizar_unidade(bruto) == esperado
+
+
+def test_extracao_do_cupom_real_nao_traz_unidade_com_numero():
+    cupom = sefaz.extrair(FIXTURE_REAL.read_text(encoding="utf-8"), chave=CHAVE_REAL)
+    assert all(not u.unidade[-1:].isdigit() for u in cupom.itens)
+
+
+@pytest.mark.parametrize("valor,esperado", [
+    (1, "1"),            # uma unidade não pode virar "1,000" (mil)
+    (4, "4"),
+    (1.406, "1,406"),    # peso em quilos, vírgula decimal
+    (0.988, "0,988"),
+    (1.036, "1,036"),
+])
+def test_quantidade_no_formato_brasileiro(valor, esperado):
+    import app
+    assert app.filtro_qtd(valor) == esperado
+
+
+# --------------------------------------------------------------------------
 # Busca de produto
 # --------------------------------------------------------------------------
 

@@ -206,17 +206,6 @@ def precos():
     )
 
 
-@app.route("/camera")
-def camera():
-    """
-    Leitura do QR Code ao vivo pela câmera, sem tirar foto.
-
-    Alternativa ao /enviar: quando o QR é lido, a URL é enviada para o mesmo
-    fluxo de sempre (consulta à SEFAZ e conferência). Só a interface muda.
-    """
-    return render_template("camera.html")
-
-
 @app.route("/enviar", methods=["GET", "POST"])
 def enviar():
     """Recebe a foto do cupom (ou a URL do QR) e mostra os itens para conferência."""

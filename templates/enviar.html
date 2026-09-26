@@ -1,67 +1,92 @@
 {% extends "base.html" %}
 {% set pagina = "enviar" %}
-{% block titulo %}Enviar cupom — TáBão{% endblock %}
+{% block titulo %}Ler o cupom — TáBão{% endblock %}
+{% block cabeca %}
+<style>
+  .palco{position:relative;width:100%;aspect-ratio:3/4;max-height:62vh;
+         background:#060908;border-radius:var(--raio);overflow:hidden;
+         border:1px solid var(--linha);display:grid;place-items:center;margin-bottom:12px}
+  .palco video{width:100%;height:100%;object-fit:cover;display:none;background:#000}
+  .palco .placeholder{text-align:center;color:#8FA594;padding:28px}
+  .palco .placeholder svg{width:48px;height:48px;opacity:.5;margin-bottom:8px}
+  .moldura{position:absolute;inset:0;display:none;pointer-events:none}
+  .moldura .alvo{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);
+                 width:64%;aspect-ratio:1;border-radius:16px;box-shadow:0 0 0 100vmax rgba(6,9,8,.5)}
+  .moldura .canto{position:absolute;width:26px;height:26px;border:3px solid var(--musgo)}
+  .moldura .c1{top:-1px;left:-1px;border-right:0;border-bottom:0;border-radius:16px 0 0 0}
+  .moldura .c2{top:-1px;right:-1px;border-left:0;border-bottom:0;border-radius:0 16px 0 0}
+  .moldura .c3{bottom:-1px;left:-1px;border-right:0;border-top:0;border-radius:0 0 0 16px}
+  .moldura .c4{bottom:-1px;right:-1px;border-left:0;border-top:0;border-radius:0 0 16px 0}
+  .moldura .risca{position:absolute;left:8%;right:8%;height:2px;top:8%;
+                  background:linear-gradient(90deg,transparent,var(--musgo),transparent);
+                  animation:varre 2.2s ease-in-out infinite}
+  @keyframes varre{0%,100%{top:8%}50%{top:92%}}
+  @media (prefers-reduced-motion:reduce){.moldura .risca{animation:none;top:50%}}
+  .dica-cam{position:absolute;left:0;right:0;bottom:14px;text-align:center;font-size:13px;
+            color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.8);display:none;padding:0 20px}
+  .status{display:flex;align-items:center;gap:8px;justify-content:center;font-size:14px;
+          color:var(--suave);min-height:20px;margin-bottom:14px}
+  .status .ponto{width:8px;height:8px;border-radius:50%;background:var(--suave);flex:none}
+  .status.lendo .ponto{background:var(--verde);animation:pisca 1s infinite}
+  .status.erro .ponto{background:var(--acento)}
+  .status.ok .ponto{background:var(--verde)}
+  @keyframes pisca{50%{opacity:.3}}
+  .ou{display:flex;align-items:center;gap:12px;color:var(--suave);font-size:13px;margin:18px 0 12px}
+  .ou::before,.ou::after{content:"";flex:1;height:1px;background:var(--linha)}
+  .oculto{display:none!important}
+</style>
+{% endblock %}
 {% block conteudo %}
 
-<h1>Envie o cupom</h1>
-<p class="sub">Você só envia a imagem. O preço é lido da nota, não digitado.</p>
+<h1>Ler o cupom</h1>
+<p class="sub">Aponte a câmera para o QR Code no rodapé do cupom. Ele é lido sozinho — e nada sai do seu aparelho.</p>
 
-<a class="botao grande" href="{{ url_for('camera') }}" style="margin-bottom:12px">
+<div class="palco">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="moldura" id="moldura">
+    <div class="alvo">
+      <span class="canto c1"></span><span class="canto c2"></span>
+      <span class="canto c3"></span><span class="canto c4"></span>
+      <span class="risca"></span>
+    </div>
+  </div>
+  <div class="placeholder" id="placeholder">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/><circle cx="12" cy="13" r="3.5"/>
+    </svg>
+    <div>Câmera desligada</div>
+  </div>
+  <div class="dica-cam" id="dica-cam">Encaixe o QR Code dentro da moldura</div>
+</div>
+
+<div class="status" id="status"><span class="ponto"></span><span id="status-txt">Toque para ligar a câmera</span></div>
+
+<button class="botao grande" id="btn-ativar" type="button">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
        stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px">
     <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/><circle cx="12" cy="13" r="3.5"/>
   </svg>
-  Ler ao vivo pela câmera
-</a>
+  Ativar câmera
+</button>
+<button class="botao secundario grande oculto" id="btn-trocar" type="button" style="margin-top:10px">Trocar câmera</button>
+
+<div class="ou">ou</div>
 
 <form method="post" id="form-cupom" enctype="multipart/form-data">
-  <div class="cartao" id="area-foto"
-       style="display:flex;flex-direction:column;align-items:center;gap:12px;
-              padding:28px 20px 22px;text-align:center;
-              border-style:dashed;border-width:2px;border-color:var(--musgo)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#2C5F2D" stroke-width="1.7"
-         stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px">
-      <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
-      <circle cx="12" cy="13" r="3.5"/>
+  <!-- A câmera e o leitor local preenchem este campo com a URL do QR; a galeria
+       só envia a foto quando a leitura no aparelho não consegue. -->
+  <button class="botao secundario grande" type="button" id="btn-galeria">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" style="width:19px;height:19px">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
     </svg>
-    <span style="font-weight:700;font-size:16px;color:var(--verde)" id="rotulo-foto">
-      Envie o cupom
-    </span>
-    <span style="color:var(--suave);font-size:13.5px" id="dica-foto">
-      Precisa aparecer o QR Code impresso no rodapé
-    </span>
-
-    <div style="display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin-top:4px">
-      <button class="botao" type="button" id="btn-camera"
-              style="padding:12px 20px;font-size:14.5px">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">
-          <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
-          <circle cx="12" cy="13" r="3.5"/>
-        </svg>
-        Tirar foto
-      </button>
-      <button class="botao secundario" type="button" id="btn-galeria"
-              style="padding:12px 20px;font-size:14.5px">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
-        </svg>
-        Galeria ou arquivos
-      </button>
-    </div>
-  </div>
-
-  <!-- Dois campos separados porque o atributo "capture" força a câmera: com
-       ele não dá para escolher da galeria, sem ele não dá para abrir a câmera
-       direto. Ter os dois deixa a escolha com o usuário. -->
-  <input type="file" id="foto" name="foto" accept="image/*" capture="environment"
-         style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+    Escolher da galeria ou arquivos
+  </button>
   <input type="file" id="arquivo" name="foto" accept="image/*"
          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
 
-  <details class="cartao" style="margin-top:4px" id="bloco-url">
+  <details class="cartao" style="margin-top:12px" id="bloco-url">
     <summary style="cursor:pointer;font-weight:600;font-size:14.5px;color:var(--verde)">
       Ou colar a URL do QR Code
     </summary>
@@ -71,120 +96,174 @@
     </div>
   </details>
 
-  <button class="botao grande" type="submit" id="btn-enviar" style="margin-top:12px">
+  <button class="botao grande oculto" type="submit" id="btn-enviar" style="margin-top:12px">
     Ler cupom
   </button>
 </form>
 
-<div class="cartao" style="margin-top:20px">
-  <h2 style="margin:0 0 12px">Como funciona</h2>
-  {% for passo in [
-      "O QR Code carrega a URL oficial da nota na SEFAZ.",
-      "O app abre essa página e extrai os produtos e preços.",
-      "Você confere o que foi lido e confirma.",
-      "Os preços entram na base e ajudam toda a comunidade."] %}
-    <div class="linha" style="padding:11px 0">
-      <span class="medalha">{{ loop.index }}</span>
-      <div class="corpo"><div class="detalhe" style="color:var(--tinta);font-size:14px;white-space:normal">
-        {{ passo }}
-      </div></div>
-    </div>
-  {% endfor %}
-  <p style="color:var(--suave);font-size:12.5px;margin:14px 0 0">
-    A foto é lida no próprio aparelho. Só quando a leitura local não consegue
-    é que a imagem é enviada ao servidor para uma segunda tentativa. O CPF do
-    consumidor, quando aparece na nota, é descartado na leitura e nunca é armazenado.
-  </p>
-</div>
+<canvas id="canvas" style="display:none"></canvas>
 
 <script src="{{ url_for('static', filename='vendor/jsQR.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/leitor-qr.js') }}"></script>
 <script>
-  const campoFoto = document.getElementById("foto");
-  const campoArquivo = document.getElementById("arquivo");
-  const campoUrl = document.getElementById("campo-url");
-  const rotulo = document.getElementById("rotulo-foto");
-  const dica = document.getElementById("dica-foto");
-  const area = document.getElementById("area-foto");
-  const botao = document.getElementById("btn-enviar");
+(function () {
+  "use strict";
+  var video = document.getElementById("video");
+  var canvas = document.getElementById("canvas");
+  var ctx = canvas.getContext("2d", { willReadFrequently: true });
+  var statusEl = document.getElementById("status");
+  var statusTxt = document.getElementById("status-txt");
+  var placeholder = document.getElementById("placeholder");
+  var moldura = document.getElementById("moldura");
+  var dicaCam = document.getElementById("dica-cam");
+  var btnAtivar = document.getElementById("btn-ativar");
+  var btnTrocar = document.getElementById("btn-trocar");
+  var btnGaleria = document.getElementById("btn-galeria");
+  var btnEnviar = document.getElementById("btn-enviar");
+  var arquivo = document.getElementById("arquivo");
+  var campoUrl = document.getElementById("campo-url");
+  var form = document.getElementById("form-cupom");
 
-  function estado(texto, detalhe, cor) {
-    rotulo.textContent = texto;
-    dica.textContent = detalhe;
-    area.style.borderColor = cor;
+  var stream = null, lendo = false, detectorNativo = null, ultimo = 0;
+  var temNativo = (typeof BarcodeDetector !== "undefined");
+  var temJsQR = (typeof jsQR !== "undefined");
+  var cameras = [], camAtual = 0;
+
+  function estado(txt, tipo) { statusTxt.textContent = txt; statusEl.className = "status" + (tipo ? " " + tipo : ""); }
+
+  // ---------------- câmera ao vivo (caminho principal) ----------------
+  function tick(ts) {
+    if (!lendo) return;
+    if (ts - ultimo > 110 && video.readyState >= 2) {
+      ultimo = ts;
+      quadro().then(function (t) { if (t) achou(t); });
+    }
+    requestAnimationFrame(tick);
   }
 
-  document.getElementById("btn-camera").addEventListener("click", function () { campoFoto.click(); });
-  document.getElementById("btn-galeria").addEventListener("click", function () { campoArquivo.click(); });
-
-  // Guarda o input que contém a foto escolhida, para poder limpá-lo (quando a
-  // leitura local dá certo, a foto não precisa ser enviada) ou mantê-lo (quando
-  // falha, a foto vai ao servidor como segunda tentativa).
-  let campoAtivo = null;
-
-  function limparFotos() {
-    campoFoto.value = "";
-    campoArquivo.value = "";
-    campoAtivo = null;
+  function quadro() {
+    if (detectorNativo) {
+      return detectorNativo.detect(video)
+        .then(function (r) { return r && r.length ? r[0].rawValue : null; })
+        .catch(function () { return null; });
+    }
+    if (temJsQR && video.videoWidth) {
+      var lado = 640, esc = Math.min(1, lado / video.videoWidth);
+      var w = Math.round(video.videoWidth * esc), h = Math.round(video.videoHeight * esc);
+      canvas.width = w; canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      var img = ctx.getImageData(0, 0, w, h);
+      var a = jsQR(img.data, w, h, { inversionAttempts: "attemptBoth" });
+      if (a && a.data) return Promise.resolve(a.data);
+    }
+    return Promise.resolve(null);
   }
 
-  function processarImagem(campo, arquivo) {
-    campoAtivo = campo;
-    campoUrl.value = "";
-    estado("Procurando o QR Code...", "A imagem é lida no seu aparelho", "var(--musgo)");
+  function achou(texto) {
+    lendo = false;
+    if (navigator.vibrate) navigator.vibrate(60);
+    pararCamera();
+    estado("QR Code lido — consultando a SEFAZ…", "ok");
+    campoUrl.value = texto;
+    arquivo.value = "";
+    form.submit();
+  }
 
-    LeitorQR.ler(arquivo, function (etapa, total) {
-      if (total) {
-        estado("Procurando o QR Code...",
-               "Tentativa " + etapa + " de " + total, "var(--musgo)");
-      } else {
-        estado("Procurando o QR Code...",
-               "Varredura detalhada, aguarde um instante", "var(--musgo)");
+  function pararCamera() {
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    lendo = false;
+    video.style.display = "none"; moldura.style.display = "none"; dicaCam.style.display = "none";
+    placeholder.style.display = "block";
+  }
+
+  function iniciar(deviceId) {
+    if (!window.isSecureContext) { estado("Sem HTTPS a câmera fica bloqueada.", "erro"); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      estado("Este navegador não abre a câmera. Escolha uma foto da galeria.", "erro"); return;
+    }
+    estado("Pedindo acesso à câmera…", "lendo");
+    var restr = deviceId ? { video: { deviceId: { exact: deviceId } } }
+                         : { video: { facingMode: { ideal: "environment" } } };
+    navigator.mediaDevices.getUserMedia(restr).then(function (s) {
+      stream = s; video.srcObject = s; video.setAttribute("playsinline", ""); return video.play();
+    }).then(function () {
+      placeholder.style.display = "none"; video.style.display = "block";
+      moldura.style.display = "block"; dicaCam.style.display = "block";
+      btnAtivar.textContent = "Câmera ligada — procurando…";
+      estado("Procurando o QR Code…", "lendo");
+      lendo = true;
+      if (temNativo && !detectorNativo) {
+        BarcodeDetector.getSupportedFormats().then(function (f) {
+          if (f.indexOf("qr_code") >= 0) detectorNativo = new BarcodeDetector({ formats: ["qr_code"] });
+        });
       }
+      requestAnimationFrame(tick);
+      if (navigator.mediaDevices.enumerateDevices) {
+        navigator.mediaDevices.enumerateDevices().then(function (ds) {
+          cameras = ds.filter(function (d) { return d.kind === "videoinput"; });
+          btnTrocar.classList.toggle("oculto", cameras.length < 2);
+        });
+      }
+    }).catch(function (e) {
+      var msg = "Não consegui abrir a câmera.";
+      if (e && e.name === "NotAllowedError") msg = "Permissão negada. Autorize a câmera — ou escolha uma foto da galeria.";
+      else if (e && e.name === "NotFoundError") msg = "Nenhuma câmera encontrada. Escolha uma foto da galeria.";
+      else if (e && e.name) msg += " (" + e.name + ")";
+      estado(msg, "erro");
+    });
+  }
+
+  btnAtivar.addEventListener("click", function () { iniciar(); });
+  btnTrocar.addEventListener("click", function () {
+    if (cameras.length < 2) return;
+    camAtual = (camAtual + 1) % cameras.length;
+    pararCamera(); iniciar(cameras[camAtual].deviceId);
+  });
+
+  // ---------------- galeria / arquivos (reserva) ----------------
+  btnGaleria.addEventListener("click", function () { arquivo.click(); });
+
+  arquivo.addEventListener("change", function () {
+    if (!arquivo.files.length) return;
+    pararCamera();
+    campoUrl.value = "";
+    btnEnviar.classList.remove("oculto");
+    estado("Procurando o QR Code na imagem…", "lendo");
+
+    LeitorQR.ler(arquivo.files[0], function (etapa, total) {
+      estado(total ? "Procurando o QR Code… (" + etapa + "/" + total + ")"
+                   : "Varredura detalhada, aguarde…", "lendo");
     }).then(function (conteudo) {
       if (conteudo) {
-        // Leu no aparelho: manda só a URL e descarta a foto, que não sai daqui.
         campoUrl.value = conteudo;
-        limparFotos();
-        estado("QR Code lido", "Toque em 'Ler cupom' para continuar", "var(--verde)");
+        arquivo.value = "";
+        estado("QR Code lido — toque em “Ler cupom”.", "ok");
       } else {
-        // Não leu aqui: mantém a foto para o servidor tentar decodificar.
-        estado("Vou tentar no servidor",
-               "Toque em 'Ler cupom' — a foto será enviada para leitura",
-               "var(--acento)");
+        estado("Não li aqui — a foto será enviada ao servidor ao tocar em “Ler cupom”.", null);
       }
     }).catch(function () {
-      // Nem abriu a imagem no navegador: ainda assim deixa o servidor tentar.
-      estado("Vou tentar no servidor",
-             "Toque em 'Ler cupom' — a foto será enviada para leitura",
-             "var(--acento)");
-    });
-  }
-
-  [campoFoto, campoArquivo].forEach(function (campo) {
-    campo.addEventListener("change", function () {
-      // Ao trocar de foto, esvazia o outro input para não enviar dois arquivos.
-      if (campo === campoFoto) campoArquivo.value = "";
-      else campoFoto.value = "";
-      if (campo.files.length) processarImagem(campo, campo.files[0]);
+      estado("A foto será enviada ao servidor ao tocar em “Ler cupom”.", null);
     });
   });
 
-  // A consulta à SEFAZ leva alguns segundos: sem retorno visual o usuário
-  // acha que travou e clica de novo.
-  document.getElementById("form-cupom").addEventListener("submit", (evento) => {
+  // ---------------- colar URL ----------------
+  campoUrl.addEventListener("input", function () {
+    if (campoUrl.value.trim()) { arquivo.value = ""; btnEnviar.classList.remove("oculto"); }
+  });
+
+  form.addEventListener("submit", function (evento) {
     var temUrl = campoUrl.value.trim();
-    var temFoto = (campoAtivo && campoAtivo.files.length);
+    var temFoto = arquivo.files.length;
     if (!temUrl && !temFoto) {
       evento.preventDefault();
-      estado("Nenhum cupom lido ainda",
-             "Tire a foto do QR Code ou cole a URL", "var(--acento)");
+      estado("Nada lido ainda. Aponte a câmera, escolha uma foto ou cole a URL.", "erro");
       return;
     }
-    botao.disabled = true;
-    botao.textContent = temFoto ? "Lendo a foto..." : "Consultando a SEFAZ...";
-    botao.style.opacity = ".7";
+    btnEnviar.disabled = true;
+    btnEnviar.textContent = temFoto ? "Lendo a foto…" : "Consultando a SEFAZ…";
+    btnEnviar.style.opacity = ".7";
   });
+})();
 </script>
 
 {% endblock %}

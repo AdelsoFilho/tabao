@@ -21,14 +21,26 @@ from .chave import ChaveInvalidaError, DadosChave, interpretar
 
 # URLs de consulta da NFC-e por unidade da federação (ambiente de produção).
 #
-# Goiás: a URL foi alterada pelo Informe Técnico 2025.003. A antiga
-# (http://nfe.sefaz.go.gov.br/...) deixou de ser aceita em 30/08/2025.
+# Goiás: o Informe Técnico 2025.003 divulgou nfeweb.sefaz.go.gov.br como o
+# endereço novo. Na prática, porém, o portal legado nfe.sefaz.go.gov.br
+# continua no ar e é justamente o que os QR Codes impressos apontam — foi
+# verificado que ele responde com SUCCESS enquanto o nfeweb devolve FAILURE
+# para as mesmas notas. Por isso os dois são tratados como portais oficiais.
 URL_CONSULTA_POR_UF = {
     "GO": "https://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe",
 }
 
 URL_CONSULTA_HOMOLOGACAO = {
     "GO": "https://nfewebhomolog.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe",
+}
+
+# Portal legado, ainda em produção. É o domínio oficial da SEFAZ-GO e o que
+# vem nos QR Codes de verdade; só atende por HTTP (não tem TLS). Fica na lista
+# de origens aceitas para que a leitura da foto real não seja recusada — a
+# trava de segurança continua: o domínio precisa ser um portal da SEFAZ-GO,
+# então apontar o "p" para um servidor próprio segue barrado.
+URL_CONSULTA_LEGADA_POR_UF = {
+    "GO": "http://nfe.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe",
 }
 
 AMBIENTE_PRODUCAO = "1"
@@ -44,7 +56,8 @@ def _origem(url: str) -> str:
 def _origens_oficiais() -> dict:
     """Deriva as origens aceitas das tabelas de URL, para não haver duas listas."""
     tabela: dict = {}
-    for fonte in (URL_CONSULTA_POR_UF, URL_CONSULTA_HOMOLOGACAO):
+    for fonte in (URL_CONSULTA_POR_UF, URL_CONSULTA_HOMOLOGACAO,
+                  URL_CONSULTA_LEGADA_POR_UF):
         for uf, url in fonte.items():
             tabela.setdefault(uf, set()).add(_origem(url))
     return tabela

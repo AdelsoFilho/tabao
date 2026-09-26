@@ -224,6 +224,18 @@ def enviar():
                 caminho = arquivo.name
             try:
                 url_qrcode = ler_de_imagem(caminho)
+            except QRCodeInvalidoError:
+                # A leitura principal é no navegador; esta é só reserva. No
+                # servidor da Vercel o OpenCV nem está instalado, então aqui a
+                # falha é esperada. Em vez de vazar "instale o OpenCV", orienta
+                # o usuário a mandar uma foto melhor ou colar a URL do QR.
+                flash(
+                    "Não consegui ler o QR Code da foto. Tente uma foto mais "
+                    "nítida, com o código do rodapé inteiro e bem visível, ou "
+                    "cole a URL do QR Code.",
+                    "erro",
+                )
+                return redirect(url_for("enviar"))
             finally:
                 Path(caminho).unlink(missing_ok=True)
 

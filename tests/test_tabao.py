@@ -128,6 +128,19 @@ def test_portal_de_homologacao_continua_aceito():
     assert interpretar_url(url).chave == CHAVE_REAL
 
 
+def test_portal_legado_http_continua_aceito():
+    """
+    Os QR Codes impressos apontam para o portal legado nfe.sefaz.go.gov.br,
+    que segue no ar e só atende por HTTP. Ele é oficial da SEFAZ-GO, então
+    precisa ser aceito — do contrário nenhum cupom real de Goiás é lido.
+    """
+    url = (
+        "http://nfe.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe"
+        f"?p={CHAVE_REAL}|2|1"
+    )
+    assert interpretar_url(url).chave == CHAVE_REAL
+
+
 def test_consulta_recusa_origem_nao_oficial_sem_tocar_na_rede(monkeypatch):
     """A trava precisa agir antes da requisição, não depois."""
     import requests

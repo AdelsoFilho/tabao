@@ -566,6 +566,22 @@ def test_ranking_exclui_mercado_com_cobertura_baixa():
     assert "So Arroz" not in nomes  # seria "o mais barato" sem ter a cesta
 
 
+def test_dias_desde_atualizacao_com_data_com_fuso():
+    # O Postgres devolve observado_em com fuso (timestamptz); subtrair de um
+    # datetime.now() ingênuo levantava TypeError e derrubava a página de preços.
+    from tabao.modelos import PrecoObservado
+
+    com_fuso = datetime.now().astimezone() - timedelta(days=3)
+    precos = [
+        PrecoObservado(descricao_original=i.upper(), cnpj="1", nome_estabelecimento="Loja",
+                       preco=5.0, unidade="kg", observado_em=com_fuso,
+                       chave_cupom="k" + i, item_cesta=i)
+        for i in ["arroz", "feijao", "acucar", "oleo", "leite", "cafe", "tomate"]
+    ]
+    ranking = montar_ranking(precos, cobertura_minima=0.5)
+    assert ranking.mais_barato.dias_desde_atualizacao == 3
+
+
 # --------------------------------------------------------------------------
 # Página real da SEFAZ-GO
 # --------------------------------------------------------------------------

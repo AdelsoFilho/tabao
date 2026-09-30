@@ -39,7 +39,11 @@ class CustoEstabelecimento:
     def dias_desde_atualizacao(self) -> int | None:
         if self.observado_ate is None:
             return None
-        return (datetime.now() - self.observado_ate).days
+        # O Postgres devolve a data com fuso (timestamptz); o JSON, sem. Casar o
+        # "agora" com o fuso da observação evita o erro de subtrair uma data
+        # ingênua de uma com fuso, que derrubava a página de preços.
+        agora = datetime.now(self.observado_ate.tzinfo)
+        return (agora - self.observado_ate).days
 
 
 @dataclass

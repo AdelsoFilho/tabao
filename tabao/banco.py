@@ -357,6 +357,10 @@ class RepositorioPostgres:
 # Escolha do armazenamento
 # --------------------------------------------------------------------------
 
+# Se o esquema já foi conferido neste processo.
+_esquema_garantido = False
+
+
 def criar_repositorio(caminho_json=None):
     """
     Devolve o repositório adequado ao ambiente.
@@ -365,10 +369,16 @@ def criar_repositorio(caminho_json=None):
     (desenvolvimento, linha de comando), usa o arquivo JSON. Nenhum outro
     módulo precisa saber qual dos dois está ativo.
     """
+    global _esquema_garantido
+
     url = os.environ.get("DATABASE_URL", "").strip()
     if url:
         repositorio = RepositorioPostgres(url)
-        repositorio.criar_esquema()
+        # O DDL é idempotente, mas rodá-lo a cada requisição custa uma ida ao
+        # banco à toa. Uma vez por processo (por partida a frio, na Vercel) basta.
+        if not _esquema_garantido:
+            repositorio.criar_esquema()
+            _esquema_garantido = True
         return repositorio
 
     from .repositorio import Repositorio

@@ -939,3 +939,24 @@ def test_pagina_inexistente_tem_404_amigavel(cliente_web):
     resposta = cliente_web.app.test_client().get("/nao-existe")
     assert resposta.status_code == 404
     assert "não encontrada" in resposta.get_data(as_text=True)
+
+
+def test_esquema_do_postgres_e_criado_uma_vez_por_processo(monkeypatch):
+    from tabao import banco
+
+    criacoes = []
+
+    class RepoFalso:
+        def __init__(self, url):
+            pass
+
+        def criar_esquema(self):
+            criacoes.append(True)
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://falso")
+    monkeypatch.setattr(banco, "RepositorioPostgres", RepoFalso)
+    monkeypatch.setattr(banco, "_esquema_garantido", False)
+
+    banco.criar_repositorio()
+    banco.criar_repositorio()
+    assert criacoes == [True]

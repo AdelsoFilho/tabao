@@ -101,6 +101,13 @@
   </button>
 </form>
 
+<div class="cartao oculto" id="bloco-pendentes" style="margin-top:12px">
+  <p style="margin:0 0 10px"><strong id="txt-pendentes"></strong><br>
+    Foram lidos sem internet e ficaram guardados neste aparelho.</p>
+  <button class="botao" type="button" id="btn-pendente">Enviar o próximo agora</button>
+  <button class="botao secundario" type="button" id="btn-descartar" style="margin-left:6px">Descartar</button>
+</div>
+
 <canvas id="canvas" style="display:none"></canvas>
 
 <script src="{{ url_for('static', filename='vendor/jsQR.js') }}"></script>
@@ -159,10 +166,65 @@
     return Promise.resolve(null);
   }
 
+  // ---------------- cupons lidos sem internet ----------------
+  // No mercado o sinal costuma ser ruim. Em vez de perder a leitura, a URL do
+  // QR fica guardada no aparelho e é enviada quando a conexão voltar. Só a
+  // URL é guardada: ela é pública e não traz dados do consumidor.
+  var CHAVE_FILA = "tabao-cupons-pendentes";
+  var blocoPend = document.getElementById("bloco-pendentes");
+  var txtPend = document.getElementById("txt-pendentes");
+
+  function lerFila() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_FILA) || "[]"); } catch (e) { return []; }
+  }
+  function gravarFila(fila) {
+    try { localStorage.setItem(CHAVE_FILA, JSON.stringify(fila)); return true; } catch (e) { return false; }
+  }
+  function mostrarFila() {
+    var fila = lerFila();
+    blocoPend.classList.toggle("oculto", !fila.length);
+    txtPend.textContent = fila.length === 1 ? "1 cupom aguardando envio."
+                                            : fila.length + " cupons aguardando envio.";
+  }
+  function guardarOffline(texto) {
+    var fila = lerFila();
+    if (fila.indexOf(texto) < 0) fila.push(texto);
+    return gravarFila(fila);
+  }
+  function enviarProximo() {
+    var fila = lerFila();
+    if (!fila.length) return;
+    if (!navigator.onLine) { estado("Ainda sem internet. O cupom continua guardado.", "erro"); return; }
+    var proximo = fila.shift();
+    gravarFila(fila);
+    campoUrl.value = proximo;
+    arquivo.value = "";
+    estado("Enviando cupom guardado — consultando a SEFAZ…", "ok");
+    form.submit();
+  }
+  document.getElementById("btn-pendente").addEventListener("click", enviarProximo);
+  document.getElementById("btn-descartar").addEventListener("click", function () {
+    var fila = lerFila(); fila.shift(); gravarFila(fila); mostrarFila();
+  });
+  window.addEventListener("online", function () {
+    mostrarFila();
+    if (lerFila().length) estado("A internet voltou. Toque em “Enviar o próximo agora”.", "ok");
+  });
+  mostrarFila();
+
   function achou(texto) {
     lendo = false;
     if (navigator.vibrate) navigator.vibrate(60);
     pararCamera();
+    if (!navigator.onLine) {
+      if (guardarOffline(texto)) {
+        estado("Sem internet: cupom guardado no aparelho. Envie quando a conexão voltar.", "ok");
+      } else {
+        estado("Sem internet e não consegui guardar o cupom. Tente de novo com conexão.", "erro");
+      }
+      mostrarFila();
+      return;
+    }
     estado("QR Code lido — consultando a SEFAZ…", "ok");
     campoUrl.value = texto;
     arquivo.value = "";
@@ -257,6 +319,14 @@
     if (!temUrl && !temFoto) {
       evento.preventDefault();
       estado("Nada lido ainda. Aponte a câmera, escolha uma foto ou cole a URL.", "erro");
+      return;
+    }
+    if (!navigator.onLine && temUrl) {
+      evento.preventDefault();
+      guardarOffline(temUrl);
+      campoUrl.value = "";
+      mostrarFila();
+      estado("Sem internet: cupom guardado no aparelho. Envie quando a conexão voltar.", "ok");
       return;
     }
     btnEnviar.disabled = true;

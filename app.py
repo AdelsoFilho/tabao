@@ -9,6 +9,7 @@ o resultado.
 """
 
 import json
+import logging
 import os
 import secrets
 import tempfile
@@ -36,9 +37,59 @@ from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimen
 from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import BancoError, criar_repositorio
+from tabao.limite import LimitadorDeTaxa
+from tabao.validacao import CupomInvalidoError, validar_cupom
 from tabao.repositorio import Repositorio, matriz_precos
 
 app = Flask(__name__)
+
+# Em produção os logs vão para o painel da hospedagem; INFO basta para ver
+# falhas da SEFAZ e do banco sem afogar o que importa.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+app.logger.setLevel(logging.INFO)
+
+
+def _ligar_monitoramento() -> None:
+    """
+    Envia erros ao Sentry quando SENTRY_DSN está definida.
+
+    Opcional de propósito: sem a variável (ou sem o pacote) o app roda igual.
+    Com ela, uma mudança de layout da SEFAZ aparece como alerta, em vez de ser
+    descoberta por um usuário.
+    """
+    dsn = os.environ.get("SENTRY_DSN", "").strip()
+    if not dsn:
+        return
+    try:
+        import sentry_sdk
+    except ImportError:
+        app.logger.warning("SENTRY_DSN definida, mas sentry-sdk não está instalado.")
+        return
+    # send_default_pii=False: nada de IP ou dados do usuário no Sentry (LGPD).
+    sentry_sdk.init(dsn=dsn, traces_sample_rate=0.0, send_default_pii=False)
+
+
+_ligar_monitoramento()
+
+# Cada envio vira duas consultas à SEFAZ: limitar protege o IP do servidor.
+LIMITE_ENVIOS = LimitadorDeTaxa(limite=10, janela=60)
+LIMITE_CONFIRMACOES = LimitadorDeTaxa(limite=10, janela=60)
+
+
+def _origem() -> str:
+    """IP de quem pediu. Atrás do proxy da Vercel/Render, vem no cabeçalho."""
+    encaminhado = request.headers.get("X-Forwarded-For", "")
+    return encaminhado.split(",")[0].strip() or request.remote_addr or "?"
+
+
+def _muitos_pedidos():
+    app.logger.warning("Limite de envios atingido por %s em %s", _origem(), request.path)
+    return render_template(
+        "erro.html",
+        titulo="Calma, muitos envios seguidos",
+        mensagem="Você enviou vários cupons em pouco tempo. Espere um minuto "
+                 "e tente de novo.",
+    ), 429
 
 # Hospedagens que definem essa variável por conta própria. Serve só para
 # distinguir "está publicado" de "está na máquina de alguém".
@@ -225,6 +276,9 @@ def enviar():
     if request.method == "GET":
         return render_template("enviar.html")
 
+    if not LIMITE_ENVIOS.permitir(_origem()):
+        return _muitos_pedidos()
+
     url_qrcode = (request.form.get("url") or "").strip()
     # Dois inputs (câmera e galeria) compartilham name="foto"; pega o preenchido.
     foto = next((f for f in request.files.getlist("foto") if f and f.filename), None)
@@ -269,7 +323,15 @@ def enviar():
     try:
         cupom = sefaz.consultar_por_qrcode(qr.url_consulta, qr.chave)
     except sefaz.ConsultaSEFAZError as erro:
+        app.logger.warning("Consulta à SEFAZ falhou (chave %s): %s", qr.chave, erro)
         flash(f"A SEFAZ não devolveu a nota: {erro}", "erro")
+        return redirect(url_for("enviar"))
+
+    try:
+        validar_cupom(cupom)
+    except CupomInvalidoError as erro:
+        app.logger.warning("Cupom recusado na validação (chave %s): %s", qr.chave, erro)
+        flash(f"Este cupom veio com dados incoerentes e não pode entrar na base: {erro}.", "erro")
         return redirect(url_for("enviar"))
 
     # Renderiza a conferência na mesma requisição: sem redirect, sem estado.
@@ -298,6 +360,9 @@ def contexto_conferencia(cupom) -> dict:
 @app.route("/confirmar", methods=["POST"])
 def confirmar():
     """Grava na base colaborativa o cupom que o usuário confirmou."""
+    if not LIMITE_CONFIRMACOES.permitir(_origem()):
+        return _muitos_pedidos()
+
     cupom = desempacotar_cupom(request.form.get("cupom", ""))
     if cupom is None:
         flash(
@@ -305,6 +370,13 @@ def confirmar():
             "Envie o cupom de novo.",
             "aviso",
         )
+        return redirect(url_for("enviar"))
+
+    # Segunda barreira: o token pode ter sido gerado antes de uma regra nova.
+    try:
+        validar_cupom(cupom)
+    except CupomInvalidoError as erro:
+        flash(f"Este cupom veio com dados incoerentes e não pode entrar na base: {erro}.", "erro")
         return redirect(url_for("enviar"))
 
     repo = repositorio()

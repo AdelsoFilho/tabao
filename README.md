@@ -33,7 +33,7 @@ Atacadista, 15/05/2026, 17 itens, R$ 365,31):
 | **Endereço oficial pelo CNPJ** | `cnpj.py` | **funcionando (BrasilAPI)** |
 | **Armazenamento em Postgres** | `banco.py` | **em produção no Supabase** |
 
-131 testes automatizados, todos passando, rodados a cada push pelo GitHub
+143 testes automatizados, todos passando, rodados a cada push pelo GitHub
 Actions (`.github/workflows/testes.yml`).
 
 Publicado em **https://tabao-chi.vercel.app**.
@@ -480,7 +480,7 @@ tabao/
 │   ├── estatistica.py     medidas, atípicos, confiança bayesiana
 │   └── cesta.py           custo da cesta e ranking
 ├── tests/
-│   ├── test_tabao.py      131 testes
+│   ├── test_tabao.py      143 testes
 │   └── fixtures/          página real da SEFAZ + cupom transcrito
 ├── dados_iniciais/        mercados do OpenStreetMap, versionados
 └── dados/precos.json      base local (só quando não há DATABASE_URL)

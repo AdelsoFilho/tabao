@@ -27,7 +27,11 @@ from .chave import ChaveInvalidaError, interpretar
 from .modelos import Cupom, Estabelecimento, ItemCupom
 from .qrcode_nfce import QRCodeInvalidoError, conferir_origem_oficial
 
-TEMPO_LIMITE_SEGUNDOS = 20
+TEMPO_LIMITE_SEGUNDOS = 15
+# Teto da consulta inteira (duas requisições + novas tentativas). Precisa
+# caber com folga no maxDuration da função na Vercel (60 s, ver vercel.json),
+# senão o usuário vê um erro genérico da plataforma em vez da nossa mensagem.
+PRAZO_TOTAL_SEGUNDOS = 40
 
 # Identificar-se é boa prática e evita ser confundido com um robô abusivo.
 CABECALHOS = {
@@ -49,12 +53,24 @@ TENTATIVAS = 2
 PAUSA_ENTRE_TENTATIVAS = 1.5
 
 
-def _get_com_retentativa(cliente, url: str, **kwargs):
-    """GET que tenta de novo em erro de rede ou 5xx. 4xx não se repete."""
+def _get_com_retentativa(cliente, url: str, prazo: float | None = None, **kwargs):
+    """
+    GET que tenta de novo em erro de rede ou 5xx. 4xx não se repete.
+
+    `prazo` é um instante de time.monotonic(): nenhuma tentativa começa ou
+    espera além dele, e o timeout de cada uma encolhe para caber no que resta.
+    """
     import time
 
     for tentativa in range(1, TENTATIVAS + 1):
-        ultima = tentativa == TENTATIVAS
+        restante = None if prazo is None else prazo - time.monotonic()
+        if restante is not None:
+            if restante <= 1:
+                raise TimeoutError("A consulta à SEFAZ passou do tempo máximo.")
+            kwargs["timeout"] = min(kwargs.get("timeout") or restante, restante)
+        ultima = tentativa == TENTATIVAS or (
+            restante is not None and restante < PAUSA_ENTRE_TENTATIVAS * tentativa + 5
+        )
         try:
             resposta = cliente.get(url, **kwargs)
         except Exception:
@@ -373,17 +389,20 @@ def consultar_por_qrcode(url_qrcode: str, chave: str,
     origem = urlparse(url_qrcode)
     base = f"{origem.scheme}://{origem.netloc}"
 
+    import time
+
     sessao = requests.Session()
     sessao.headers.update(CABECALHOS)
+    prazo = time.monotonic() + PRAZO_TOTAL_SEGUNDOS
 
     try:
         # Passo 1: abre a página do QR Code para receber o cookie de sessão.
-        _get_com_retentativa(sessao, url_qrcode, timeout=tempo_limite)
+        _get_com_retentativa(sessao, url_qrcode, prazo=prazo, timeout=tempo_limite)
 
         # Passo 2: pede o HTML do DANFE ao endpoint interno.
         resposta = _get_com_retentativa(
             sessao, f"{base}{RENDER_HTML}", params={"chNFe": chave},
-            timeout=tempo_limite,
+            prazo=prazo, timeout=tempo_limite,
         )
     except Exception as erro:
         raise ConsultaSEFAZError(f"Falha de rede ao consultar a SEFAZ: {erro}") from erro

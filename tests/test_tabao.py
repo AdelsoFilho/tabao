@@ -960,3 +960,126 @@ def test_esquema_do_postgres_e_criado_uma_vez_por_processo(monkeypatch):
     banco.criar_repositorio()
     banco.criar_repositorio()
     assert criacoes == [True]
+
+
+# --------------------------------------------------------------------------
+# Validação do cupom, limite de envios e prazo da consulta
+# --------------------------------------------------------------------------
+
+from tabao.limite import LimitadorDeTaxa
+from tabao.validacao import CupomInvalidoError, problemas_do_cupom, validar_cupom
+
+
+def test_cupom_real_passa_na_validacao(cupom_real):
+    assert problemas_do_cupom(cupom_real) == []
+
+
+def test_validacao_recusa_preco_zerado(cupom_real):
+    cupom_real.itens[0].valor_total = 0
+    with pytest.raises(CupomInvalidoError, match="zerado"):
+        validar_cupom(cupom_real)
+
+
+def test_validacao_recusa_quantidade_absurda(cupom_real):
+    cupom_real.itens[0].quantidade = 50_000
+    assert any("quantidade" in p for p in problemas_do_cupom(cupom_real))
+
+
+def test_validacao_recusa_data_no_futuro(cupom_real):
+    agora = cupom_real.emitido_em.replace(tzinfo=None) - timedelta(days=10)
+    cupom_real.emitido_em = cupom_real.emitido_em.replace(tzinfo=None)
+    assert any("futuro" in p for p in problemas_do_cupom(cupom_real, agora))
+
+
+def test_validacao_recusa_total_que_nao_bate(cupom_real):
+    cupom_real.valor_total = cupom_real.total_calculado + 100
+    assert any("soma" in p for p in problemas_do_cupom(cupom_real))
+
+
+def test_validacao_recusa_linha_incoerente(cupom_real):
+    item = cupom_real.itens[0]
+    item.valor_total = item.quantidade * item.valor_unitario * 3
+    assert any("não bate" in p for p in problemas_do_cupom(cupom_real))
+
+
+def test_limitador_barra_rajada_e_libera_depois_da_janela():
+    limite = LimitadorDeTaxa(limite=2, janela=60)
+    assert limite.permitir("ip", agora=0)
+    assert limite.permitir("ip", agora=1)
+    assert not limite.permitir("ip", agora=2)
+    assert limite.permitir("outro-ip", agora=2)
+    assert limite.permitir("ip", agora=61)
+
+
+def test_prazo_esgotado_nao_faz_nova_requisicao(sem_pausa):
+    import time
+
+    cliente = _ClienteFalso(_RespostaFalsa(200))
+    with pytest.raises(TimeoutError):
+        sefaz._get_com_retentativa(cliente, "u", prazo=time.monotonic())
+    assert cliente.chamadas == 0
+
+
+def test_prazo_encolhe_o_timeout_da_requisicao(sem_pausa):
+    import time
+
+    recebido = {}
+
+    class Cliente:
+        def get(self, url, **kwargs):
+            recebido.update(kwargs)
+            return _RespostaFalsa(200)
+
+    sefaz._get_com_retentativa(Cliente(), "u", prazo=time.monotonic() + 8, timeout=15)
+    assert recebido["timeout"] <= 8
+
+
+URL_QR_REAL = ("https://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe?p="
+               f"{CHAVE_REAL}|2|1|1|ABC")
+
+
+@pytest.fixture
+def web_com_sefaz_falsa(cliente_web, monkeypatch, cupom_real):
+    cliente_web.LIMITE_ENVIOS.limpar()
+    cliente_web.LIMITE_CONFIRMACOES.limpar()
+    monkeypatch.setattr(cliente_web.sefaz, "consultar_por_qrcode",
+                        lambda url, chave: cupom_real)
+    return cliente_web
+
+
+def test_fluxo_completo_envio_conferencia_e_gravacao(web_com_sefaz_falsa, cupom_real):
+    import re
+
+    cliente = web_com_sefaz_falsa.app.test_client()
+
+    conferencia = cliente.post("/enviar", data={"url": URL_QR_REAL})
+    assert conferencia.status_code == 200
+    html = conferencia.get_data(as_text=True)
+    token = re.search(r'name="cupom" value="([^"]+)"', html).group(1)
+
+    gravacao = cliente.post("/confirmar", data={"cupom": token})
+    assert gravacao.status_code == 302
+
+    base = Repositorio(web_com_sefaz_falsa.BASE)
+    assert len(base) == len(cupom_real.itens)
+    assert base.ja_processado(cupom_real.chave)
+
+    # Reenviar o mesmo cupom não duplica nada.
+    de_novo = cliente.post("/enviar", data={"url": URL_QR_REAL})
+    assert de_novo.status_code == 302
+    assert len(Repositorio(web_com_sefaz_falsa.BASE)) == len(cupom_real.itens)
+
+
+def test_envio_de_cupom_incoerente_e_recusado(web_com_sefaz_falsa, cupom_real):
+    cupom_real.itens[0].valor_total = 0
+    resposta = web_com_sefaz_falsa.app.test_client().post("/enviar", data={"url": URL_QR_REAL})
+    assert resposta.status_code == 302
+    assert not Path(web_com_sefaz_falsa.BASE).exists()
+
+
+def test_rajada_de_envios_recebe_429(web_com_sefaz_falsa):
+    cliente = web_com_sefaz_falsa.app.test_client()
+    codigos = [cliente.post("/enviar", data={"url": URL_QR_REAL}).status_code
+               for _ in range(11)]
+    assert codigos[-1] == 429
+    assert 429 not in codigos[:10]

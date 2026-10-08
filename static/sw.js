@@ -11,13 +11,15 @@
  * dado que envelhece: a rede sempre tem prioridade quando está disponível.
  */
 
-const VERSAO = "tabao-v2";
+const VERSAO = "tabao-v3";
 const CACHE_ESTATICO = `${VERSAO}-estatico`;
 const CACHE_PAGINAS = `${VERSAO}-paginas`;
 
 const ESSENCIAIS = [
   "/",
   "/offline",
+  // A tela da câmera precisa abrir sem internet para guardar cupons lidos.
+  "/enviar",
   "/static/manifest.json",
   "/static/vendor/leaflet.js",
   "/static/vendor/jsQR.js",

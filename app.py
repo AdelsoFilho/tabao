@@ -647,24 +647,34 @@ def cesta():
 # Mapa (OpenStreetMap)
 # --------------------------------------------------------------------------
 
-@app.route("/")
-@app.route("/mapa")
-def inicio():
-    """Mapa dos mercados da região, destacando os que já têm preços."""
-    cache = CacheMapa(MAPA)
-    repo = repositorio()
+def _mercados_com_precos(repo, cache=None) -> list:
+    """
+    Os mercados que aparecem no mapa: com preços na base e com posição.
 
+    Única fonte para o mapa E para o "vale a pena ir?". Antes a comparação só
+    via os mercados localizados pelo endereço do cupom e ignorava os achados
+    pelo OpenStreetMap: o mapa mostrava 6 mercados e a conta enxergava 1.
+    """
+    cache = cache or CacheMapa(MAPA)
     # O casamento entre o nome do cupom e o do mapa é feito aqui, e não no
     # arquivo: assim o dado embarcado continua válido conforme a base cresce.
     casar_com_estabelecimentos(cache.locais, repo.estabelecimentos())
 
     # Duas fontes: os mercados do OpenStreetMap e os que vieram dos cupons.
     # O OSM não conhece todo supermercado brasileiro, então o endereço da nota
-    # completa o mapa.
+    # completa o mapa. Só entram os que têm preços: um ponto sem preço não
+    # ajuda a decidir onde comprar e só polui o mapa.
     todos = mesclar(cache.locais, locais_dos_estabelecimentos(repo))
-    # Só aparecem os mercados que já têm preços na base: um ponto sem preço
-    # não ajuda a decidir onde comprar e só polui o mapa.
-    todos = [local for local in todos if local.cnpj]
+    return [local for local in todos if local.cnpj]
+
+
+@app.route("/")
+@app.route("/mapa")
+def inicio():
+    """Mapa dos mercados da região, destacando os que já têm preços."""
+    cache = CacheMapa(MAPA)
+    repo = repositorio()
+    todos = _mercados_com_precos(repo, cache)
     por_tipo: dict[str, int] = {}
     for local in todos:
         por_tipo[local.tipo] = por_tipo.get(local.tipo, 0) + 1
@@ -743,20 +753,17 @@ def api_viabilidade():
 
     repo = repositorio()
     custos = {c.cnpj: c for c in montar_ranking(repo.precos, cobertura_minima=0.0).estabelecimentos}
-    registro = repo.registro_estabelecimentos
-
-    no_mapa = [
-        custos[cnpj] for cnpj, e in registro.items()
-        if e.localizado and cnpj in custos and custos[cnpj].custo_total > 0
-    ]
+    # Os mesmos pontos que o mapa mostra (cupom + OpenStreetMap).
+    locais = [l for l in _mercados_com_precos(repo)
+              if l.cnpj in custos and custos[l.cnpj].custo_total > 0]
     # Todos comparados sobre os mesmos itens: senão quem tem menos itens
     # registrados parece mais barato só por isso.
-    comparavel = cesta_comparavel(no_mapa)
+    comparavel = cesta_comparavel(list({l.cnpj: custos[l.cnpj] for l in locais}.values()))
 
     candidatos = [
-        (registro[c.cnpj].nome, c.cnpj, comparavel.custos[c.cnpj],
-         (registro[c.cnpj].latitude, registro[c.cnpj].longitude))
-        for c in no_mapa
+        (local.nome, local.cnpj, comparavel.custos[local.cnpj],
+         (local.latitude, local.longitude))
+        for local in locais
     ]
 
     if not candidatos:
@@ -778,6 +785,10 @@ def api_viabilidade():
         "custo_total": v.custo_total,
         "rota_real": v.trajeto.metodo == "ruas",
         "itens_estimados": comparavel.estimados.get(v.cnpj, 0),
+        # Uma rede pode ter várias lojas com o mesmo CNPJ: a posição identifica
+        # a loja exata do cartão.
+        "latitude": v.destino[0] if v.destino else None,
+        "longitude": v.destino[1] if v.destino else None,
     } for v in avaliacoes]
 
     mais_perto = min(avaliacoes, key=lambda v: v.distancia_km)

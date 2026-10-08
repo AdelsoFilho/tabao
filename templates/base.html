@@ -57,7 +57,14 @@
   /* ---------- conteúdo ---------- */
   .conteudo{padding:16px 16px calc(var(--barra) + 26px + env(safe-area-inset-bottom));
             max-width:820px;margin:0 auto}
-  .conteudo.cheio{padding:0 0 calc(var(--barra) + env(safe-area-inset-bottom));max-width:none}
+  /* Tela cheia (mapa): ocupa exatamente o espaço entre o topo e a barra de
+     baixo, e o que estiver dentro (faixa de instalação + mapa) divide esse
+     espaço. Antes a altura do mapa ignorava a faixa e o fim do mapa (com o
+     cartão do mercado) ia parar atrás da barra de navegação. */
+  .conteudo.cheio{padding:0;max-width:none;display:flex;flex-direction:column;
+                  height:calc(100dvh - 58px - env(safe-area-inset-top) - var(--barra)
+                              - env(safe-area-inset-bottom))}
+  .conteudo.cheio > .instalar{margin:10px 14px;flex:none}
 
   h1{font-size:22px;margin:2px 0 4px;letter-spacing:-.4px;font-weight:800}
   h2{font-size:13px;margin:24px 0 10px;color:var(--suave);font-weight:700;

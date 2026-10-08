@@ -6,8 +6,7 @@
 {% block cabeca %}
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
   <style>
-    .tela-mapa{position:relative;
-               height:calc(100dvh - 58px - env(safe-area-inset-top) - var(--barra) - env(safe-area-inset-bottom))}
+    .tela-mapa{position:relative;flex:1;min-height:0}
     #mapa{position:absolute;inset:0;z-index:0;background:#DCE3DA}
 
     .sobreposicao{position:absolute;top:0;left:0;right:0;z-index:400;padding:12px 14px 0;
@@ -407,7 +406,11 @@
       .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
       .then(function (d) {
         const lista = d.resultados || [];
-        const pos = lista.findIndex(function (r) { return r.cnpj === local.cnpj; });
+        const pos = lista.findIndex(function (r) {
+          return r.cnpj === local.cnpj &&
+                 Math.abs(r.latitude - local.latitude) < 1e-5 &&
+                 Math.abs(r.longitude - local.longitude) < 1e-5;
+        });
         if (pos < 0 || lista.length < 2) {
           alvo.textContent = "Ainda não há outro mercado com preços para comparar.";
           return;

@@ -76,6 +76,7 @@ class Viabilidade:
     custo_compra: float
     trajeto: Trajeto
     custo_combustivel: float
+    destino: Optional[tuple[float, float]] = None
 
     @property
     def custo_total(self) -> float:
@@ -237,7 +238,7 @@ def avaliar(origem: tuple[float, float],
         )
         resultado.append(Viabilidade(
             nome=nome, cnpj=cnpj, custo_compra=round(custo_compra, 2),
-            trajeto=trajeto, custo_combustivel=combustivel,
+            trajeto=trajeto, custo_combustivel=combustivel, destino=_destino,
         ))
 
     resultado.sort(key=lambda v: v.custo_total)

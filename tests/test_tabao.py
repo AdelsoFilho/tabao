@@ -778,3 +778,164 @@ def test_mapa_usa_os_mercados_embarcados(tmp_path):
     assert len(cache.locais) > 100
     assert cache.area == "Goiânia"
     assert cache.centro is not None
+
+
+# --------------------------------------------------------------------------
+# Robustez: falhas externas, dados corrompidos e erros inesperados
+# --------------------------------------------------------------------------
+
+class _RespostaFalsa:
+    def __init__(self, status, texto=""):
+        self.status_code = status
+        self.text = texto
+        self.encoding = None
+
+
+class _ClienteFalso:
+    """Devolve, em ordem, respostas ou exceções pré-programadas."""
+
+    def __init__(self, *roteiro):
+        self.roteiro = list(roteiro)
+        self.chamadas = 0
+
+    def get(self, url, **kwargs):
+        self.chamadas += 1
+        proximo = self.roteiro.pop(0)
+        if isinstance(proximo, Exception):
+            raise proximo
+        return proximo
+
+
+@pytest.fixture
+def sem_pausa(monkeypatch):
+    monkeypatch.setattr(sefaz, "PAUSA_ENTRE_TENTATIVAS", 0)
+
+
+def test_retentativa_recupera_queda_de_conexao(sem_pausa):
+    cliente = _ClienteFalso(ConnectionError("caiu"), _RespostaFalsa(200))
+    assert sefaz._get_com_retentativa(cliente, "u").status_code == 200
+    assert cliente.chamadas == 2
+
+
+def test_retentativa_recupera_erro_5xx(sem_pausa):
+    cliente = _ClienteFalso(_RespostaFalsa(503), _RespostaFalsa(200))
+    assert sefaz._get_com_retentativa(cliente, "u").status_code == 200
+
+
+def test_retentativa_nao_repete_erro_4xx(sem_pausa):
+    cliente = _ClienteFalso(_RespostaFalsa(404))
+    assert sefaz._get_com_retentativa(cliente, "u").status_code == 404
+    assert cliente.chamadas == 1
+
+
+def test_retentativa_desiste_e_propaga_a_falha(sem_pausa):
+    cliente = _ClienteFalso(ConnectionError("1"), ConnectionError("2"))
+    with pytest.raises(ConnectionError):
+        sefaz._get_com_retentativa(cliente, "u")
+
+
+def test_base_json_corrompida_e_guardada_e_nao_sobrescrita(tmp_path):
+    base = tmp_path / "precos.json"
+    base.write_text("{ isto não é json", encoding="utf-8")
+
+    repo = Repositorio(base)
+    assert len(repo) == 0
+    guardados = list(tmp_path.glob("precos.json.corrompido-*"))
+    assert len(guardados) == 1
+    assert guardados[0].read_text(encoding="utf-8") == "{ isto não é json"
+
+    repo.salvar()
+    assert guardados[0].exists()
+
+
+def test_salvar_nao_deixa_temporario(tmp_path, cupom_real):
+    repo = Repositorio(tmp_path / "precos.json")
+    repo.registrar_cupom(cupom_real)
+    repo.salvar()
+    assert [p.name for p in tmp_path.iterdir()] == ["precos.json"]
+    assert len(Repositorio(tmp_path / "precos.json")) == len(cupom_real.itens)
+
+
+def test_postgres_trata_corrida_de_cupom_duplicado(cupom_real):
+    from tabao.banco import RepositorioPostgres
+
+    class Duplicado(Exception):
+        sqlstate = "23505"
+
+    repo = RepositorioPostgres.__new__(RepositorioPostgres)
+    repo.ja_processado = lambda chave: False
+
+    def gravar(_cupom):
+        raise Duplicado()
+
+    repo._gravar_cupom = gravar
+    assert repo.registrar_cupom(cupom_real) == 0
+
+
+@pytest.fixture
+def cliente_web(tmp_path, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    import app as modulo_app
+
+    monkeypatch.setattr(modulo_app, "BASE", tmp_path / "precos.json")
+    modulo_app.app.config["TESTING"] = False
+    modulo_app.app.config["PROPAGATE_EXCEPTIONS"] = False
+    return modulo_app
+
+
+def test_banco_fora_do_ar_mostra_pagina_503(cliente_web, monkeypatch):
+    from tabao.banco import BancoError
+
+    def falha(_caminho):
+        raise BancoError("sem conexão")
+
+    monkeypatch.setattr(cliente_web, "criar_repositorio", falha)
+    resposta = cliente_web.app.test_client().get("/precos")
+    assert resposta.status_code == 503
+    assert "indisponível" in resposta.get_data(as_text=True)
+
+
+def test_erro_inesperado_mostra_pagina_amigavel(cliente_web, monkeypatch):
+    def falha(_caminho):
+        raise KeyError("bug")
+
+    monkeypatch.setattr(cliente_web, "criar_repositorio", falha)
+    resposta = cliente_web.app.test_client().get("/precos")
+    assert resposta.status_code == 500
+    assert "Algo deu errado" in resposta.get_data(as_text=True)
+
+
+def test_repositorio_e_fechado_ao_fim_da_requisicao(cliente_web, monkeypatch):
+    fechados = []
+
+    class RepoFalso(Repositorio):
+        def fechar(self):
+            fechados.append(True)
+
+    monkeypatch.setattr(cliente_web, "criar_repositorio", RepoFalso)
+    cliente_web.app.test_client().get("/precos")
+    assert fechados == [True]
+
+
+def test_layout_inesperado_da_sefaz_vira_mensagem(monkeypatch, sem_pausa):
+    import requests
+
+    class SessaoFalsa:
+        headers = {}
+
+        def get(self, url, **kwargs):
+            return _RespostaFalsa(200, "<Map/>")
+
+    monkeypatch.setattr(requests, "Session", SessaoFalsa)
+    monkeypatch.setattr(sefaz, "desembrulhar_resposta",
+                        lambda _x: (_ for _ in ()).throw(AttributeError("x")))
+    url = ("https://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe?p="
+           f"{CHAVE_REAL}|2|1|1|ABC")
+    with pytest.raises(sefaz.ConsultaSEFAZError, match="layout"):
+        sefaz.consultar_por_qrcode(url, CHAVE_REAL)
+
+
+def test_pagina_inexistente_tem_404_amigavel(cliente_web):
+    resposta = cliente_web.app.test_client().get("/nao-existe")
+    assert resposta.status_code == 404
+    assert "não encontrada" in resposta.get_data(as_text=True)

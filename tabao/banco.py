@@ -149,6 +149,17 @@ class RepositorioPostgres:
         if self.ja_processado(cupom.chave):
             return 0
 
+        try:
+            return self._gravar_cupom(cupom)
+        except Exception as erro:
+            # Duas pessoas confirmando o mesmo cupom ao mesmo tempo: ambas
+            # passam pelo ja_processado, a segunda esbarra na chave primária.
+            # A transação já foi desfeita; o cupom está na base, nada a fazer.
+            if getattr(erro, "sqlstate", None) == "23505":
+                return 0
+            raise
+
+    def _gravar_cupom(self, cupom: Cupom) -> int:
         estabelecimento = cupom.estabelecimento
 
         with self._conexao.transaction():

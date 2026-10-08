@@ -15,7 +15,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from flask import (Flask, flash, jsonify, redirect, render_template, request,
+from flask import (Flask, flash, g, jsonify, redirect, render_template, request,
                    send_from_directory, url_for)
 
 # Permite rodar "python tabao/app.py" a partir do diretório acima.
@@ -35,7 +35,7 @@ from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimen
                         localizar_estabelecimentos, mesclar)
 from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
-from tabao.banco import criar_repositorio
+from tabao.banco import BancoError, criar_repositorio
 from tabao.repositorio import Repositorio, matriz_precos
 
 app = Flask(__name__)
@@ -139,9 +139,22 @@ def repositorio():
     Repositório do ambiente: Postgres quando há DATABASE_URL, JSON quando não.
 
     Uma instância por requisição mantém o código simples e evita conexão
-    compartilhada entre threads do servidor.
+    compartilhada entre threads do servidor. Fica guardada em `g` para que
+    chamadas repetidas na mesma requisição não abram conexões extras, e é
+    fechada no fim da requisição (ver `fechar_repositorio`).
     """
-    return criar_repositorio(BASE)
+    if "repo" not in g:
+        g.repo = criar_repositorio(BASE)
+    return g.repo
+
+
+@app.teardown_appcontext
+def fechar_repositorio(_erro=None):
+    """Devolve a conexão ao pooler: sem isto cada requisição vazaria uma."""
+    repo = g.pop("repo", None)
+    fechar = getattr(repo, "fechar", None)
+    if fechar:
+        fechar()
 
 
 @app.template_filter("reais")
@@ -627,6 +640,39 @@ def offline():
 def arquivo_grande(_erro):
     flash("A foto passou de 16 MB. Tente uma imagem menor.", "erro")
     return redirect(url_for("enviar"))
+
+
+@app.errorhandler(BancoError)
+def banco_indisponivel(erro):
+    """Banco fora do ar vira uma página explicativa, não um erro 500 cru."""
+    app.logger.error("Banco indisponível: %s", erro)
+    return render_template(
+        "erro.html",
+        titulo="Base de preços indisponível",
+        mensagem="Não consegui falar com o banco de dados agora. "
+                 "Tente de novo em alguns instantes.",
+    ), 503
+
+
+@app.errorhandler(404)
+def nao_encontrado(_erro):
+    return render_template(
+        "erro.html",
+        titulo="Página não encontrada",
+        mensagem="O endereço que você abriu não existe no TáBão.",
+    ), 404
+
+
+@app.errorhandler(500)
+def erro_interno(erro):
+    """Rede de segurança: qualquer falha não prevista ganha uma página amigável."""
+    app.logger.exception("Erro não tratado: %s", getattr(erro, "original_exception", erro))
+    return render_template(
+        "erro.html",
+        titulo="Algo deu errado",
+        mensagem="Tivemos um problema inesperado. Nada que você enviou foi "
+                 "gravado pela metade; tente de novo.",
+    ), 500
 
 
 if __name__ == "__main__":

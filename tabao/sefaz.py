@@ -43,6 +43,29 @@ class ConsultaSEFAZError(RuntimeError):
     """Falha ao consultar ou interpretar a página da SEFAZ."""
 
 
+# O portal da SEFAZ oscila: quedas de conexão e 5xx passageiros são comuns.
+# Repetir uma vez, com pausa curta, resolve a maioria sem o usuário perceber.
+TENTATIVAS = 2
+PAUSA_ENTRE_TENTATIVAS = 1.5
+
+
+def _get_com_retentativa(cliente, url: str, **kwargs):
+    """GET que tenta de novo em erro de rede ou 5xx. 4xx não se repete."""
+    import time
+
+    for tentativa in range(1, TENTATIVAS + 1):
+        ultima = tentativa == TENTATIVAS
+        try:
+            resposta = cliente.get(url, **kwargs)
+        except Exception:
+            if ultima:
+                raise
+        else:
+            if resposta.status_code < 500 or ultima:
+                return resposta
+        time.sleep(PAUSA_ENTRE_TENTATIVAS * tentativa)
+
+
 def buscar_html(url: str, tempo_limite: int = TEMPO_LIMITE_SEGUNDOS) -> str:
     """
     Baixa a página pública da nota fiscal.
@@ -58,7 +81,9 @@ def buscar_html(url: str, tempo_limite: int = TEMPO_LIMITE_SEGUNDOS) -> str:
         ) from erro
 
     try:
-        resposta = requests.get(url, headers=CABECALHOS, timeout=tempo_limite)
+        resposta = _get_com_retentativa(
+            requests, url, headers=CABECALHOS, timeout=tempo_limite
+        )
     except Exception as erro:
         raise ConsultaSEFAZError(f"Falha de rede ao consultar a SEFAZ: {erro}") from erro
 
@@ -353,11 +378,12 @@ def consultar_por_qrcode(url_qrcode: str, chave: str,
 
     try:
         # Passo 1: abre a página do QR Code para receber o cookie de sessão.
-        sessao.get(url_qrcode, timeout=tempo_limite)
+        _get_com_retentativa(sessao, url_qrcode, timeout=tempo_limite)
 
         # Passo 2: pede o HTML do DANFE ao endpoint interno.
-        resposta = sessao.get(
-            f"{base}{RENDER_HTML}", params={"chNFe": chave}, timeout=tempo_limite
+        resposta = _get_com_retentativa(
+            sessao, f"{base}{RENDER_HTML}", params={"chNFe": chave},
+            timeout=tempo_limite,
         )
     except Exception as erro:
         raise ConsultaSEFAZError(f"Falha de rede ao consultar a SEFAZ: {erro}") from erro
@@ -368,7 +394,17 @@ def consultar_por_qrcode(url_qrcode: str, chave: str,
         )
 
     resposta.encoding = "utf-8"
-    return extrair(desembrulhar_resposta(resposta.text), chave=chave)
+    try:
+        return extrair(desembrulhar_resposta(resposta.text), chave=chave)
+    except ConsultaSEFAZError:
+        raise
+    except Exception as erro:
+        # Layout inesperado (campo ausente, número em formato novo...): vira
+        # mensagem para o usuário em vez de erro 500.
+        raise ConsultaSEFAZError(
+            "Não consegui interpretar a página da SEFAZ. O layout do portal "
+            f"pode ter mudado ({type(erro).__name__})."
+        ) from erro
 
 
 def consultar(url: str, chave: Optional[str] = None) -> Cupom:

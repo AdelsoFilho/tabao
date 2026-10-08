@@ -12,7 +12,9 @@ um antigo. Isso preserva a série temporal que dá valor à base.
 """
 
 import json
+import os
 import re
+import sys
 from collections import deque
 from dataclasses import asdict
 from dataclasses import dataclass
@@ -110,8 +112,11 @@ class Repositorio:
 
         try:
             dados = json.loads(self.caminho.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            # Base corrompida ou ilegível: começa vazia em vez de quebrar.
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            # Base corrompida ou ilegível: começa vazia em vez de quebrar, mas
+            # guarda o arquivo de lado. Sem isso o próximo salvar() gravaria a
+            # base vazia por cima e o histórico se perderia de vez.
+            self._guardar_corrompido()
             return
 
         self._precos = [PrecoObservado.de_dicionario(d) for d in dados.get("precos", [])]
@@ -131,9 +136,22 @@ class Repositorio:
                 cnpj: asdict(e) for cnpj, e in self._estabelecimentos.items()
             },
         }
-        self.caminho.write_text(
+        # Grava num temporário e troca de uma vez: se o processo cair no meio,
+        # o arquivo antigo continua inteiro em vez de ficar pela metade.
+        temporario = self.caminho.with_name(self.caminho.name + ".tmp")
+        temporario.write_text(
             json.dumps(conteudo, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        os.replace(temporario, self.caminho)
+
+    def _guardar_corrompido(self) -> None:
+        carimbo = datetime.now().strftime("%Y%m%d-%H%M%S")
+        destino = self.caminho.with_name(f"{self.caminho.name}.corrompido-{carimbo}")
+        try:
+            os.replace(self.caminho, destino)
+            print(f"AVISO: base ilegível movida para {destino}", file=sys.stderr)
+        except OSError:
+            pass
 
     # ---- escrita ----
 

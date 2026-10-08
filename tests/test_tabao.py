@@ -1083,3 +1083,92 @@ def test_rajada_de_envios_recebe_429(web_com_sefaz_falsa):
                for _ in range(11)]
     assert codigos[-1] == 429
     assert 429 not in codigos[:10]
+
+
+# --------------------------------------------------------------------------
+# Desempenho: conexão sob demanda e cache de leitura do Postgres
+# --------------------------------------------------------------------------
+
+class _CursorFalso:
+    def __init__(self, conexao):
+        self.conexao = conexao
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, sql, params=None):
+        self.conexao.consultas.append(sql)
+
+    def fetchall(self):
+        return self.conexao.linhas
+
+
+class _ConexaoFalsa:
+    def __init__(self, linhas):
+        self.linhas = linhas
+        self.consultas = []
+
+    def cursor(self):
+        return _CursorFalso(self)
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def postgres_falso(monkeypatch):
+    from tabao import banco
+
+    banco.limpar_cache()
+    agora = datetime(2026, 5, 15, 10, 0)
+    linhas = [
+        ("ARROZ TIPO 1 5KG", "111", "Mercado A", 25.9, "un", agora, "c1", "graos", "arroz", ""),
+        ("SABAO EM PO", "222", "Mercado B", 12.0, "un", agora, "c2", "limpeza", None, ""),
+    ]
+    conexao = _ConexaoFalsa(linhas)
+    conexoes = []
+
+    def conectar(_url):
+        conexoes.append(conexao)
+        return conexao
+
+    monkeypatch.setattr(banco, "_conectar", conectar)
+    yield banco, conexao, conexoes
+    banco.limpar_cache()
+
+
+def test_postgres_nao_conecta_sem_consulta(postgres_falso):
+    banco, _, conexoes = postgres_falso
+    repo = banco.RepositorioPostgres("postgresql://falso")
+    repo.fechar()
+    assert conexoes == []
+
+
+def test_painel_inteiro_faz_uma_unica_consulta(postgres_falso):
+    banco, conexao, _ = postgres_falso
+    repo = banco.RepositorioPostgres("postgresql://falso")
+
+    assert len(repo) == 2
+    assert len(repo.precos_da_cesta) == 1
+    assert repo.estabelecimentos() == {"111": "Mercado A", "222": "Mercado B"}
+    assert repo.itens_cobertos() == {"arroz"}
+    assert repo.categorias_cobertas() == {"graos": 1, "limpeza": 1}
+    assert [p.descricao_original for p in repo.buscar_produto("arroz")] == ["ARROZ TIPO 1 5KG"]
+    assert len(conexao.consultas) == 1
+
+    # Outra requisição no mesmo processo: servida do cache, sem conexão nova.
+    outro = banco.RepositorioPostgres("postgresql://falso")
+    assert len(outro.precos) == 2
+    assert len(conexao.consultas) == 1
+
+
+def test_cache_expira(postgres_falso, monkeypatch):
+    banco, conexao, _ = postgres_falso
+    repo = banco.RepositorioPostgres("postgresql://falso")
+    repo.precos
+    monkeypatch.setattr(banco, "CACHE_SEGUNDOS", 0)
+    repo.precos
+    assert len(conexao.consultas) == 2

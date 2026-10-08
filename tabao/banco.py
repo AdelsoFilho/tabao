@@ -15,6 +15,8 @@ O histórico continua imutável: cada cupom acrescenta linhas em `precos` e nada
 """
 
 import os
+import time
+from collections import Counter
 from datetime import datetime
 from typing import Iterator, Optional
 
@@ -110,6 +112,31 @@ def _conectar(url: str):
         ) from erro
 
 
+# Cache de leitura compartilhado pelas requisições do mesmo processo.
+#
+# Cada ida ao banco custa uma viagem de rede, e abrir a conexão custa várias.
+# A base muda pouco (alguns cupons por dia), então guardar a lista de preços
+# por um minuto deixa as telas instantâneas numa instância já aquecida. Quem
+# grava limpa o cache da própria instância; as outras enxergam o cupom novo
+# em no máximo CACHE_SEGUNDOS.
+CACHE_SEGUNDOS = 60
+_cache: dict[str, tuple[float, object]] = {}
+
+
+def limpar_cache() -> None:
+    _cache.clear()
+
+
+def _em_cache(nome: str, carregar):
+    agora = time.monotonic()
+    guardado = _cache.get(nome)
+    if guardado and agora - guardado[0] < CACHE_SEGUNDOS:
+        return guardado[1]
+    valor = carregar()
+    _cache[nome] = (agora, valor)
+    return valor
+
+
 class RepositorioPostgres:
     """Mesma interface de `Repositorio`, com Postgres por trás."""
 
@@ -117,7 +144,14 @@ class RepositorioPostgres:
         self.url = url or os.environ.get("DATABASE_URL", "")
         if not self.url:
             raise BancoError("DATABASE_URL não está definida.")
-        self._conexao = _conectar(self.url)
+        self._con = None
+
+    @property
+    def _conexao(self):
+        """Conecta só na primeira consulta: tela servida do cache nem abre conexão."""
+        if self._con is None:
+            self._con = _conectar(self.url)
+        return self._con
 
     # ---- estrutura ----
 
@@ -127,10 +161,13 @@ class RepositorioPostgres:
             cursor.execute(ESQUEMA)
 
     def fechar(self) -> None:
+        if self._con is None:
+            return
         try:
-            self._conexao.close()
+            self._con.close()
         except Exception:
             pass
+        self._con = None
 
     # ---- escrita ----
 
@@ -152,6 +189,7 @@ class RepositorioPostgres:
         try:
             return self._gravar_cupom(cupom)
         except Exception as erro:
+            limpar_cache()
             # Duas pessoas confirmando o mesmo cupom ao mesmo tempo: ambas
             # passam pelo ja_processado, a segunda esbarra na chave primária.
             # A transação já foi desfeita; o cupom está na base, nada a fazer.
@@ -160,6 +198,7 @@ class RepositorioPostgres:
             raise
 
     def _gravar_cupom(self, cupom: Cupom) -> int:
+        limpar_cache()
         estabelecimento = cupom.estabelecimento
 
         with self._conexao.transaction():
@@ -234,32 +273,30 @@ class RepositorioPostgres:
         from precos
     """
 
-    @property
-    def precos(self) -> list[PrecoObservado]:
+    def _carregar_precos(self) -> list[PrecoObservado]:
         with self._conexao.cursor() as cursor:
             cursor.execute(self._SELECAO + " order by observado_em desc")
             return [self._preco_da_linha(l) for l in cursor.fetchall()]
 
+    # Tudo abaixo deriva de uma única consulta (em cache). Com o volume da
+    # base, filtrar em Python é mais rápido que uma viagem extra ao banco.
+
+    @property
+    def precos(self) -> list[PrecoObservado]:
+        return list(_em_cache("precos", self._carregar_precos))
+
     @property
     def precos_da_cesta(self) -> list[PrecoObservado]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(self._SELECAO + " where item_cesta is not null")
-            return [self._preco_da_linha(l) for l in cursor.fetchall()]
+        return [p for p in self.precos if p.item_cesta]
 
     def por_item(self, item: str) -> list[PrecoObservado]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(self._SELECAO + " where item_cesta = %s", (item,))
-            return [self._preco_da_linha(l) for l in cursor.fetchall()]
+        return [p for p in self.precos if p.item_cesta == item]
 
     def por_categoria(self, categoria: str) -> list[PrecoObservado]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(self._SELECAO + " where categoria = %s", (categoria,))
-            return [self._preco_da_linha(l) for l in cursor.fetchall()]
+        return [p for p in self.precos if p.categoria == categoria]
 
     def por_estabelecimento(self, cnpj: str) -> list[PrecoObservado]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(self._SELECAO + " where cnpj = %s", (cnpj,))
-            return [self._preco_da_linha(l) for l in cursor.fetchall()]
+        return [p for p in self.precos if p.cnpj == cnpj]
 
     def buscar_produto(self, termo: str) -> list[PrecoObservado]:
         """
@@ -276,26 +313,18 @@ class RepositorioPostgres:
         return [p for p in self.precos if alvo in normalizar(p.descricao_original)]
 
     def estabelecimentos(self) -> dict[str, str]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute("select distinct cnpj, nome_estabelecimento from precos")
-            return {linha[0]: linha[1] for linha in cursor.fetchall()}
+        # Do mais antigo ao mais novo: o nome mais recente de cada CNPJ prevalece.
+        return {p.cnpj: p.nome_estabelecimento for p in reversed(self.precos)}
 
     def itens_cobertos(self) -> set[str]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute("select distinct item_cesta from precos where item_cesta is not null")
-            return {linha[0] for linha in cursor.fetchall()}
+        return {p.item_cesta for p in self.precos if p.item_cesta}
 
     def categorias_cobertas(self) -> dict[str, int]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(
-                "select categoria, count(*) from precos group by categoria order by 2 desc"
-            )
-            return {linha[0]: linha[1] for linha in cursor.fetchall()}
+        contagem = Counter(p.categoria for p in self.precos)
+        return dict(contagem.most_common())
 
     def __len__(self) -> int:
-        with self._conexao.cursor() as cursor:
-            cursor.execute("select count(*) from precos")
-            return cursor.fetchone()[0]
+        return len(self.precos)
 
     def __iter__(self) -> Iterator[PrecoObservado]:
         return iter(self.precos)
@@ -314,23 +343,21 @@ class RepositorioPostgres:
             cep=linha[5] or "", bairro=linha[6] or "", precisao=linha[7] or "",
         )
 
-    @property
-    def registro_estabelecimentos(self) -> dict[str, Estabelecimento]:
+    def _carregar_estabelecimentos(self) -> dict[str, Estabelecimento]:
         with self._conexao.cursor() as cursor:
             cursor.execute(self._SELECAO_ESTAB)
             return {l[0]: self._estabelecimento_da_linha(l) for l in cursor.fetchall()}
 
+    @property
+    def registro_estabelecimentos(self) -> dict[str, Estabelecimento]:
+        return dict(_em_cache("estabelecimentos", self._carregar_estabelecimentos))
+
     def estabelecimentos_localizados(self) -> list[Estabelecimento]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(self._SELECAO_ESTAB + " where latitude is not null")
-            return [self._estabelecimento_da_linha(l) for l in cursor.fetchall()]
+        return [e for e in self.registro_estabelecimentos.values() if e.latitude is not None]
 
     def estabelecimentos_sem_local(self) -> list[Estabelecimento]:
-        with self._conexao.cursor() as cursor:
-            cursor.execute(
-                self._SELECAO_ESTAB + " where latitude is null and endereco <> ''"
-            )
-            return [self._estabelecimento_da_linha(l) for l in cursor.fetchall()]
+        return [e for e in self.registro_estabelecimentos.values()
+                if e.latitude is None and e.endereco]
 
     def atualizar_estabelecimento(self, estabelecimento: Estabelecimento) -> None:
         """
@@ -339,6 +366,7 @@ class RepositorioPostgres:
         Chamado pela geocodificação, que trabalha sobre objetos em memória e
         precisa devolver o resultado ao armazenamento.
         """
+        limpar_cache()
         with self._conexao.cursor() as cursor:
             cursor.execute(
                 """

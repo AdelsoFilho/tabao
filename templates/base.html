@@ -42,6 +42,20 @@
   .conta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .conta svg{width:15px;height:15px;flex:none}
 
+  /* ---------- voltar ---------- */
+  .voltar{display:inline-flex;align-items:center;gap:4px;font-size:14px;font-weight:600;
+          color:var(--verde);margin:0 0 8px;padding:4px 0}
+  .voltar svg{width:16px;height:16px}
+
+  /* ---------- listas clicáveis ---------- */
+  a.linha{color:inherit}
+  a.linha:active{background:var(--creme)}
+  .linha .seta{color:#B9C2B6;flex:none;width:16px;height:16px}
+  .selo{display:inline-block;font-size:10.5px;font-weight:700;border-radius:99px;
+        padding:1px 7px;vertical-align:1px;margin-left:4px}
+  .selo.verde{background:#E8F0E2;color:#24521f}
+  .selo.cinza{background:var(--creme);color:var(--suave)}
+
   /* ---------- formulários de conta ---------- */
   .form-conta label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
   .form-conta input[type=text],.form-conta input[type=email],.form-conta input[type=password],
@@ -234,6 +248,7 @@
     {% endfor %}
   {% endwith %}
 
+  {% block voltar %}{% endblock %}
   {% block conteudo %}{% endblock %}
 </div>
 
@@ -302,6 +317,23 @@
   });
 
   window.addEventListener("appinstalled", () => barra.classList.remove("visivel"));
+</script>
+<script>
+  // "‹ voltar": dentro do app, volta à tela anterior (mantendo a rolagem);
+  // vindo de fora, vai para o destino padrão do link.
+  const veioDoApp = history.length > 1 && document.referrer.indexOf(location.origin) === 0;
+  // O texto padrão nomeia o destino fixo ("Preços"); voltando pelo histórico
+  // o destino é outro, então o rótulo vira um "Voltar" honesto.
+  if (veioDoApp) {
+    document.querySelectorAll("a[data-voltar] span").forEach(function (s) { s.textContent = "Voltar"; });
+  }
+  document.addEventListener("click", function (e) {
+    const link = e.target.closest("a[data-voltar]");
+    if (link && veioDoApp) {
+      e.preventDefault();
+      history.back();
+    }
+  });
 </script>
 </body>
 </html>

@@ -31,6 +31,23 @@
     .mercado .botoes{display:flex;gap:8px;margin:11px 0 0 39px;flex-wrap:wrap}
     .mercado .botoes a{padding:8px 13px;font-size:13px}
 
+    /* "Como chegar": menu com os três apps. Os links são os universais de
+       cada um: no celular abrem o app instalado; sem ele, a versão web. */
+    .chegar{position:relative}
+    .chegar summary{list-style:none;cursor:pointer;padding:8px 13px;font-size:13px}
+    .chegar summary::-webkit-details-marker{display:none}
+    .chegar summary::after{content:"";display:inline-block;width:6px;height:6px;margin-left:7px;
+             border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+             transform:translateY(-2px) rotate(45deg)}
+    .chegar[open] summary::after{transform:translateY(1px) rotate(-135deg)}
+    .chegar .apps{position:absolute;left:0;top:calc(100% + 6px);z-index:20;min-width:190px;
+             background:#fff;border:1px solid var(--linha);border-radius:14px;padding:6px;
+             box-shadow:0 8px 24px rgba(27,58,42,.18)}
+    .chegar .apps a{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:10px;
+             color:var(--tinta);font-size:14px;font-weight:600}
+    .chegar .apps a:active,.chegar .apps a:hover{background:var(--creme)}
+    .chegar .ponto{width:9px;height:9px;border-radius:50%;flex:none}
+
     .nota-itens{color:var(--suave);font-size:12.5px;line-height:1.5;margin-top:16px}
     .nota-itens a{font-weight:600}
   </style>
@@ -117,7 +134,17 @@
         }
       }
       const verNoMapa = "/mapa?foco=" + r.latitude + "," + r.longitude;
-      const chegar = "https://www.google.com/maps/dir/?api=1&destination=" + r.latitude + "," + r.longitude;
+      const destino = r.latitude + "," + r.longitude;
+      const chegar =
+        '<details class="chegar"><summary class="botao secundario">Como chegar</summary>' +
+        '<div class="apps">' +
+          '<a href="https://www.google.com/maps/dir/?api=1&destination=' + destino +
+            '" target="_blank" rel="noopener"><span class="ponto" style="background:#4285F4"></span>Google Maps</a>' +
+          '<a href="https://waze.com/ul?ll=' + destino + '&navigate=yes" target="_blank" rel="noopener">' +
+            '<span class="ponto" style="background:#33CCFF"></span>Waze</a>' +
+          '<a href="https://maps.apple.com/?daddr=' + destino + '&dirflg=d" target="_blank" rel="noopener">' +
+            '<span class="ponto" style="background:#A2AAAD"></span>Apple Maps</a>' +
+        "</div></details>";
 
       html +=
         '<div class="mercado' + (i === 0 ? " primeiro" : "") + (destaque ? " destaque" : "") + '"' +
@@ -138,7 +165,7 @@
           diferenca +
           '<div class="botoes">' +
             '<a class="botao secundario" href="' + verNoMapa + '">Ver no mapa</a>' +
-            '<a class="botao secundario" href="' + chegar + '" target="_blank" rel="noopener">Como chegar</a>' +
+            chegar +
           "</div>" +
         "</div>";
     });
@@ -150,6 +177,16 @@
       : "Os mercados têm poucos itens em comum, então comparamos " + dados.itens_comparados +
         " itens (" + esc(nomes) + ") e estimamos os que faltam em cada um pela média da região. " +
         '<a href="/enviar">Enviar cupons</a> deixa a comparação mais precisa.';
+
+    // Abrir um menu "Como chegar" fecha os outros; tocar fora fecha todos.
+    lista.querySelectorAll(".chegar").forEach(function (menu) {
+      menu.addEventListener("toggle", function () {
+        if (!menu.open) return;
+        lista.querySelectorAll(".chegar[open]").forEach(function (outro) {
+          if (outro !== menu) outro.open = false;
+        });
+      });
+    });
 
     const escolhido = document.getElementById("escolhido");
     if (escolhido) escolhido.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -181,6 +218,12 @@
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
     );
   }
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".chegar")) {
+      document.querySelectorAll(".chegar[open]").forEach(function (m) { m.open = false; });
+    }
+  });
+
   iniciar();
 })();
 </script>

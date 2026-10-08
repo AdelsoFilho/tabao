@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{% from "_componentes.html" import voltar, linha_produto %}
 {% set pagina = "categorias" %}
-{% block titulo %}Categorias — TáBão{% endblock %}
+{% block titulo %}{{ nome_atual or "Categorias" }} — TáBão{% endblock %}
+{% block voltar %}{{ voltar(url_for('precos'), "Preços") }}{% endblock %}
 {% block conteudo %}
 
 <h1>{{ nome_atual or "Categorias" }}</h1>
-<p class="sub">Todos os produtos do cupom, não apenas os da cesta básica.</p>
+<p class="sub">Todos os produtos dos cupons, não apenas os da cesta básica.</p>
 
 {% if not contagem %}
   <div class="cartao vazio">
@@ -14,26 +16,18 @@
 {% else %}
 
 <div class="chips">
-  <a class="chip {{ 'ativo' if not categoria }}" href="{{ url_for('categorias') }}">Todas</a>
   {% for chave, quantidade in contagem.items() %}
     <a class="chip {{ 'ativo' if chave == categoria }}"
-       href="{{ url_for('categorias', categoria=chave) }}">
-      {{ nome_categoria(chave) }} · {{ quantidade }}
-    </a>
+       href="{{ url_for('categorias', categoria=chave) }}">{{ nome_categoria(chave) }}</a>
   {% endfor %}
 </div>
 
 {% if categoria and achados %}
+  <p style="color:var(--suave);font-size:13px;margin:4px 4px 8px">
+    {{ achados|length }} produto(s). Toque para ver o preço em cada mercado.
+  </p>
   <div class="cartao compacto">
-    {% for p in achados %}
-      <div class="linha">
-        <div class="corpo">
-          <div class="titulo">{{ p.descricao_original }}</div>
-          <div class="detalhe">{{ p.nome_estabelecimento }} · {{ p.observado_em|data }}</div>
-        </div>
-        <div class="valor">R$ {{ p.preco|reais }}<small>{{ p.unidade }}</small></div>
-      </div>
-    {% endfor %}
+    {% for p in achados %}{{ linha_produto(p) }}{% endfor %}
   </div>
 {% elif categoria %}
   <div class="cartao vazio"><p>Nenhum produto nesta categoria ainda.</p></div>

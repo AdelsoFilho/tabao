@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_componentes.html" import voltar, linha_no_mercado %}
+{% set pagina = "precos" %}
+{% block titulo %}{{ nome }} — TáBão{% endblock %}
+{% block voltar %}{{ voltar(url_for('precos'), "Preços") }}{% endblock %}
+{% block conteudo %}
+
+<h1>{{ nome }}</h1>
+<p class="sub">
+  {% if endereco %}{{ endereco }} · {% endif %}{{ total_produtos }} produto(s) · atualizado em {{ ultima|data }}
+</p>
+
+<div class="destaques">
+  {% if custo and custo.custo_total > 0 %}
+    <div class="destaque">
+      <div class="n">R$ {{ custo.custo_total|reais }}</div>
+      <div class="r">cesta com {{ custo.itens_encontrados }} de {{ total_itens_cesta }} itens</div>
+    </div>
+  {% endif %}
+  <div class="destaque claro">
+    <div class="n">{{ total_produtos }}</div>
+    <div class="r">produtos com preço</div>
+  </div>
+</div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+  {% if pontos %}
+    <a class="botao secundario" style="padding:10px 15px;font-size:14px"
+       href="{{ url_for('inicio', foco=pontos[0].latitude ~ ',' ~ pontos[0].longitude) }}">Ver no mapa</a>
+    <a class="botao secundario" style="padding:10px 15px;font-size:14px"
+       href="{{ url_for('comparar', cnpj=pontos[0].cnpj, lat=pontos[0].latitude, lon=pontos[0].longitude) }}">Vale a pena ir?</a>
+  {% endif %}
+</div>
+
+{% for categoria, lista in por_categoria.items() %}
+  <h2>{{ nome_categoria(categoria) }}</h2>
+  <div class="cartao compacto">
+    {% for p in lista %}{{ linha_no_mercado(p, cnpj) }}{% endfor %}
+  </div>
+{% endfor %}
+
+{% endblock %}

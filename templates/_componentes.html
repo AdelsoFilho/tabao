@@ -1,0 +1,56 @@
+{# Peças reutilizadas pelas telas de preços. #}
+
+{% macro voltar(destino, texto) -%}
+  <a class="voltar" href="{{ destino }}" data-voltar>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    <span>{{ texto }}</span>
+  </a>
+{%- endmacro %}
+
+{% macro seta() -%}
+  <svg class="seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+{%- endmacro %}
+
+{# Uma linha de produto: nome, onde está mais barato e a faixa de preço. #}
+{% macro linha_produto(p) -%}
+  <a class="linha" href="{{ url_for('produto', p=p.chave) }}">
+    <div class="corpo">
+      <div class="titulo">{{ p.descricao }}</div>
+      <div class="detalhe completo">
+        {% if p.mercados > 1 -%}
+          em {{ p.mercados }} mercados · mais barato no {{ p.ofertas[0].mercado }}
+        {%- else -%}
+          {{ p.ofertas[0].mercado }} · {{ p.ofertas[0].observado_em|data }}
+        {%- endif %}
+      </div>
+    </div>
+    <div class="valor">
+      {%- if p.mercados > 1 %}<small style="display:inline">a partir de</small> {% endif -%}
+      R$ {{ p.menor|reais }}<small>{{ p.ofertas[0].unidade }}</small>
+    </div>
+    {{ seta() }}
+  </a>
+{%- endmacro %}
+
+{# Produto na página de um mercado: o preço DAQUI e como ele se compara. #}
+{% macro linha_no_mercado(p, cnpj) -%}
+  {% set aqui = p.ofertas|selectattr("cnpj", "equalto", cnpj)|first %}
+  <a class="linha" href="{{ url_for('produto', p=p.chave) }}">
+    <div class="corpo">
+      <div class="titulo">{{ p.descricao }}</div>
+      <div class="detalhe completo">
+        {% if p.mercados == 1 -%}
+          só coletado aqui · {{ aqui.observado_em|data }}
+        {%- elif aqui.preco <= p.menor -%}
+          <span class="selo verde">mais barato</span> entre {{ p.mercados }} mercados
+        {%- else -%}
+          R$ {{ (aqui.preco - p.menor)|reais }} mais barato no {{ p.ofertas[0].mercado }}
+        {%- endif %}
+      </div>
+    </div>
+    <div class="valor">R$ {{ aqui.preco|reais }}<small>{{ aqui.unidade }}</small></div>
+    {{ seta() }}
+  </a>
+{%- endmacro %}

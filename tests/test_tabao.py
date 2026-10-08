@@ -1394,3 +1394,68 @@ def test_cartao_do_mapa_leva_para_a_comparacao(cliente_web, cupom_real):
     assert "/comparar?cnpj=" in html
     assert "Onde compensa comprar?" in html
     assert "painel-vale" not in html
+
+
+# --------------------------------------------------------------------------
+# Catálogo: produtos agrupados, nomes legíveis e telas de preços
+# --------------------------------------------------------------------------
+
+from tabao.catalogo import agrupar_produtos, nome_amigavel
+
+
+@pytest.mark.parametrize("razao, esperado", [
+    ("(38)CEMA CENTRAL MINEIRA ATACADISTA LTDA", "Cema Central Mineira Atacadista"),
+    ("CARREFOUR COMERCIO E INDUSTRIA LTDA", "Carrefour"),
+    ("SUPER DISTRIBUIDORA DE ALIMENTOS SILVA LTDA", "Super Distribuidora de Alimentos Silva"),
+    ("ITAUCA DISTRIBUICAO S/A", "Itauca Distribuicao"),
+    ("ATACADAO S.A.", "Atacadao"),
+    ("MEGA ME SUPERMERCADO ME", "Mega Me Supermercado"),
+])
+def test_nome_amigavel(razao, esperado):
+    assert nome_amigavel(razao) == esperado
+
+
+def _obs(descricao, cnpj, preco, dia, nome="MERCADO X LTDA"):
+    return PrecoObservado(descricao_original=descricao, cnpj=cnpj, nome_estabelecimento=nome,
+                          preco=preco, unidade="un", observado_em=datetime(2026, 5, dia),
+                          chave_cupom=f"c{dia}{cnpj}", categoria="carnes")
+
+
+def test_produto_repetido_vira_uma_linha_com_o_preco_mais_recente():
+    precos = [
+        _obs("COXA S COXA FGO CONG", "A", 8.50, 1),
+        _obs("COXA S COXA FGO CONG", "A", 8.78, 9),
+        _obs("Coxa s coxa fgo cong", "A", 8.60, 5),
+        _obs("COXA S COXA FGO CONG", "B", 7.99, 3, nome="OUTRO MERCADO EIRELI"),
+    ]
+    [produto] = agrupar_produtos(precos)
+    assert produto.mercados == 2
+    assert [(o.cnpj, o.preco, o.vezes) for o in produto.ofertas] == [("B", 7.99, 1), ("A", 8.78, 3)]
+    assert produto.ofertas[0].mercado == "Outro Mercado"
+
+
+def test_telas_de_precos_navegaveis(cliente_web, cupom_real):
+    import re
+    repo = Repositorio(cliente_web.BASE)
+    repo.registrar_cupom(cupom_real)
+    repo.salvar()
+    cliente = cliente_web.app.test_client()
+    cnpj = cupom_real.estabelecimento.cnpj
+
+    html = cliente.get(f"/mercado/{cnpj}").get_data(as_text=True)
+    assert "Cema Central Mineira Atacadista" in html
+    assert "data-voltar" in html
+    link = re.search(r'href="(/produto\?p=[^"]+)"', html).group(1)
+
+    pagina = cliente.get(link.replace("&amp;", "&"))
+    assert pagina.status_code == 200
+    assert f"/mercado/{cnpj}" in pagina.get_data(as_text=True)
+
+    categoria = cliente.get("/categorias/hortifruti").get_data(as_text=True)
+    assert "/produto?p=" in categoria
+
+    busca = cliente.get("/produtos?q=tomate").get_data(as_text=True)
+    assert "/produto?p=" in busca
+
+    assert cliente.get("/produto?p=nao-existe").status_code == 404
+    assert cliente.get("/mercado/000").status_code == 404

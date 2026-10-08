@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% set pagina = "precos" %}
 {% block titulo %}Preços — TáBão{% endblock %}
+{% from "_componentes.html" import seta %}
+{% block cabeca %}
+<style>
+  .nota-ranking{color:var(--suave);font-size:12.5px;line-height:1.5;margin:8px 4px 0}
+</style>
+{% endblock %}
 {% block conteudo %}
 
 <h1>Onde a compra sai mais barata</h1>
@@ -33,40 +39,52 @@
   </div>
 </div>
 
-{% if ranking and ranking.estabelecimentos %}
-  {% if ranking.economia_possivel > 0 %}
+{% if ranking and ranking.linhas %}
+  {% if ranking.economia > 0 %}
     <div class="faixa">
-      <div class="n">R$ {{ ranking.economia_possivel|reais }}</div>
+      <div class="n">R$ {{ ranking.economia|reais }}</div>
       <div class="r">
-        de diferença entre o mercado mais caro e o mais barato
-        ({{ ranking.economia_percentual }}%)
+        de diferença na cesta entre o mercado mais caro e o mais barato
+        ({{ ranking.economia_pct|string|replace(".", ",") }}%)
       </div>
     </div>
   {% endif %}
 
   <h2>Ranking da cesta básica</h2>
   <div class="cartao compacto">
-    {% for e in ranking.estabelecimentos %}
-      <div class="linha">
+    {% for e in ranking.linhas %}
+      <a class="linha" href="{{ url_for('mercado', cnpj=e.cnpj) }}">
         <span class="medalha {{ 'primeiro' if loop.first }}">{{ loop.index }}</span>
         <div class="corpo">
           <div class="titulo">{{ e.nome }}</div>
-          <div class="detalhe">
-            {{ e.itens_encontrados }} de {{ total_itens_cesta }} itens
-            {%- if e.dias_desde_atualizacao is not none %}
-              · atualizado há {{ e.dias_desde_atualizacao }} dia(s)
-            {%- endif %}
+          <div class="detalhe completo">
+            {{ e.itens }} de {{ total_itens_cesta }} itens coletados
+            {%- if e.estimados %} · {{ e.estimados }} pela média{% endif %}
+            {%- if e.dias is not none %} · há {{ e.dias }} dia(s){% endif %}
           </div>
         </div>
-        <div class="valor">R$ {{ e.custo_total|reais }}<small>cesta do mês</small></div>
-      </div>
+        <div class="valor">R$ {{ e.custo|reais }}<small>cesta</small></div>
+        {{ seta() }}
+      </a>
     {% endfor %}
   </div>
+  <p class="nota-ranking">
+    {% if ranking.metodo == "comum" -%}
+      Todos comparados pelos mesmos {{ ranking.itens|length }} itens: {{ ranking.itens|join(", ") }}.
+    {%- else -%}
+      Comparados por {{ ranking.itens|length }} itens; o que falta em cada mercado
+      entra pela média da região.
+    {%- endif %}
+    {% if ranking.fora %}
+      {{ ranking.fora }} mercado(s) com menos de {{ minimo_itens }} itens da cesta ainda ficam de fora.
+    {% endif %}
+    <a href="{{ url_for('comparar') }}">Contando a gasolina até cada um?</a>
+  </p>
 {% else %}
   <div class="cartao">
     <p style="margin:0;color:var(--suave);font-size:14.5px">
-      Ainda não há mercado com metade da cesta coberta, então o ranking não
-      seria confiável. Os preços já coletados estão abaixo.
+      Nenhum mercado tem {{ minimo_itens }} itens da cesta coletados ainda, então o
+      ranking não seria confiável. Os preços já coletados estão abaixo.
     </p>
   </div>
 {% endif %}
@@ -76,9 +94,10 @@
   {% for chave, quantidade in categorias.items() %}
     <a class="linha" href="{{ url_for('categorias', categoria=chave) }}">
       <div class="corpo">
-        <div class="titulo" style="color:var(--tinta)">{{ nome_categoria(chave) }}</div>
+        <div class="titulo">{{ nome_categoria(chave) }}</div>
       </div>
       <div class="valor" style="color:var(--suave);font-size:14px">{{ quantidade }}</div>
+      {{ seta() }}
     </a>
   {% endfor %}
 </div>

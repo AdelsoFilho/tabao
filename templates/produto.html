@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_componentes.html" import voltar, seta, linha_produto %}
+{% set pagina = "precos" %}
+{% block titulo %}{{ produto.descricao }} — TáBão{% endblock %}
+{% block voltar %}{{ voltar(url_for('categorias', categoria=produto.categoria), nome_categoria(produto.categoria)) }}{% endblock %}
+{% block conteudo %}
+
+<h1>{{ produto.descricao }}</h1>
+<p class="sub">
+  {{ nome_categoria(produto.categoria) }}
+  {%- if nome_item %} · item da cesta básica ({{ nome_item }}){% endif %}
+</p>
+
+{% if produto.mercados > 1 %}
+  <div class="destaques">
+    <div class="destaque">
+      <div class="n">R$ {{ produto.menor|reais }}</div>
+      <div class="r">mais barato: {{ produto.ofertas[0].mercado }}</div>
+    </div>
+    <div class="destaque claro">
+      <div class="n">R$ {{ (produto.maior - produto.menor)|reais }}</div>
+      <div class="r">de diferença entre {{ produto.mercados }} mercados</div>
+    </div>
+  </div>
+{% endif %}
+
+<h2>Onde encontrar</h2>
+<div class="cartao compacto">
+  {% for o in produto.ofertas %}
+    <a class="linha" href="{{ url_for('mercado', cnpj=o.cnpj) }}">
+      {% if produto.mercados > 1 %}
+        <span class="medalha {{ 'primeiro' if loop.first }}">{{ loop.index }}</span>
+      {% endif %}
+      <div class="corpo">
+        <div class="titulo">{{ o.mercado }}</div>
+        <div class="detalhe completo">
+          em {{ o.observado_em|data }}
+          {%- if o.vezes > 1 %} · visto {{ o.vezes }} vezes{% endif %}
+          {%- if not loop.first %} · <span style="color:#8f2f0c">+ R$ {{ (o.preco - produto.menor)|reais }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="valor">R$ {{ o.preco|reais }}<small>{{ o.unidade }}</small></div>
+      {{ seta() }}
+    </a>
+  {% endfor %}
+</div>
+<p style="color:var(--suave);font-size:12.5px;margin:8px 4px 0">
+  Preço mais recente pago em cada mercado, lido de cupons fiscais.
+</p>
+
+{% if similares %}
+  <h2>Outras opções de {{ nome_item|lower }}</h2>
+  <div class="cartao compacto">
+    {% for p in similares %}{{ linha_produto(p) }}{% endfor %}
+  </div>
+{% endif %}
+
+{% endblock %}

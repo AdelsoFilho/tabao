@@ -24,11 +24,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tabao import sefaz
+from tabao.catalogo import (agrupar_produtos, chave_do_produto, nome_amigavel,
+                            produto_por_chave)
 from tabao.categorias import nome_da_categoria, todas_as_categorias
 from tabao.cesta import cesta_comparavel, estatisticas_do_item, montar_ranking
 from tabao.categorias import categorizar
 from tabao.chave import ChaveInvalidaError, interpretar
-from tabao.estatistica import DadosInsuficientesError, resumir
 from tabao.produtos import CESTA_BASICA, classificar, nome_do_item
 from tabao.qrcode_nfce import QRCodeInvalidoError, interpretar_url, ler_de_imagem
 from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimentos,
@@ -419,22 +420,140 @@ def contexto_global():
     return {"area_atual": CacheMapa(MAPA).area or "Goiânia"}
 
 
+# --------------------------------------------------------------------------
+# Preços: painel, mercado, produto, categorias e busca
+# --------------------------------------------------------------------------
+
+# Mercados com menos itens da cesta que isto ficam fora do ranking: com um ou
+# dois itens, o "custo da cesta" seria quase todo estimado pela região.
+MINIMO_ITENS_RANKING = 3
+
+
+def _nomes_mercados(repo) -> dict[str, str]:
+    """
+    CNPJ -> nome para exibir.
+
+    O nome do mapa ("Carrefour Sudoeste") quando o CNPJ tem um só ponto no
+    mapa; senão a razão social do cupom, limpa ("Carrefour").
+    """
+    pontos: dict[str, set[str]] = {}
+    for local in _mercados_com_precos(repo):
+        pontos.setdefault(local.cnpj, set()).add(local.nome)
+    nomes = {cnpj: nome_amigavel(razao) for cnpj, razao in repo.estabelecimentos().items()}
+    for cnpj, conjunto in pontos.items():
+        if len(conjunto) == 1:
+            nomes[cnpj] = next(iter(conjunto))
+    return nomes
+
+
+def _ranking_justo(repo, nomes: dict[str, str]) -> dict:
+    """Ranking da cesta sobre os mesmos itens para todos (ver cesta_comparavel)."""
+    custos = montar_ranking(repo.precos, cobertura_minima=0.0).estabelecimentos
+    elegiveis = [c for c in custos if c.itens_encontrados >= MINIMO_ITENS_RANKING]
+    comparavel = cesta_comparavel(elegiveis)
+    linhas = sorted((
+        {
+            "cnpj": c.cnpj,
+            "nome": nomes.get(c.cnpj, c.nome),
+            "custo": comparavel.custos[c.cnpj],
+            "itens": c.itens_encontrados,
+            "estimados": comparavel.estimados.get(c.cnpj, 0),
+            "dias": c.dias_desde_atualizacao,
+        } for c in elegiveis
+    ), key=lambda l: l["custo"])
+    economia = round(linhas[-1]["custo"] - linhas[0]["custo"], 2) if len(linhas) > 1 else 0
+    return {
+        "linhas": linhas,
+        "fora": len(custos) - len(elegiveis),
+        "itens": [nome_do_item(i) for i in comparavel.itens],
+        "metodo": comparavel.metodo,
+        "economia": economia,
+        "economia_pct": round(100 * economia / linhas[-1]["custo"], 1) if economia else 0,
+    }
+
+
 @app.route("/precos")
 def precos():
-    """Painel: ranking da cesta e resumo da base."""
+    """Painel: ranking da cesta, categorias e atalhos."""
     repo = repositorio()
-    ranking = montar_ranking(repo.precos) if len(repo) else None
+    nomes = _nomes_mercados(repo) if len(repo) else {}
 
     return render_template(
         "precos.html",
-        ranking=ranking,
+        ranking=_ranking_justo(repo, nomes) if len(repo) else None,
         total_precos=len(repo),
-        total_cesta=len(repo.precos_da_cesta),
         estabelecimentos=len(repo.estabelecimentos()),
         categorias=repo.categorias_cobertas(),
         nome_categoria=nome_da_categoria,
         itens_cobertos=len(repo.itens_cobertos()),
         total_itens_cesta=len(CESTA_BASICA),
+        minimo_itens=MINIMO_ITENS_RANKING,
+    )
+
+
+@app.route("/mercado/<cnpj>")
+def mercado(cnpj: str):
+    """Tudo de um mercado: onde fica, a cesta e os produtos por categoria."""
+    repo = repositorio()
+    precos_aqui = repo.por_estabelecimento(cnpj)
+    if not precos_aqui:
+        abort(404)
+
+    nomes = _nomes_mercados(repo)
+    # Agrupa a base inteira para cada produto daqui saber se está mais barato
+    # em outro lugar.
+    chaves_aqui = {chave_do_produto(p.descricao_original) for p in precos_aqui}
+    produtos_aqui = agrupar_produtos(
+        [p for p in repo.precos if chave_do_produto(p.descricao_original) in chaves_aqui], nomes)
+    por_categoria: dict[str, list] = {}
+    for produto in produtos_aqui:
+        por_categoria.setdefault(produto.categoria, []).append(produto)
+
+    pontos = [l for l in _mercados_com_precos(repo) if l.cnpj == cnpj]
+    custo = next((c for c in montar_ranking(repo.precos, cobertura_minima=0.0).estabelecimentos
+                  if c.cnpj == cnpj), None)
+    registro = repo.registro_estabelecimentos.get(cnpj)
+
+    return render_template(
+        "mercado.html",
+        cnpj=cnpj,
+        nome=nomes.get(cnpj, cnpj),
+        endereco=(pontos[0].endereco if pontos else "") or (registro.endereco if registro else ""),
+        pontos=pontos,
+        custo=custo,
+        total_itens_cesta=len(CESTA_BASICA),
+        por_categoria=dict(sorted(por_categoria.items(),
+                                  key=lambda kv: nome_da_categoria(kv[0]))),
+        total_produtos=len(produtos_aqui),
+        nome_categoria=nome_da_categoria,
+        ultima=max(p.observado_em.replace(tzinfo=None) for p in precos_aqui),
+    )
+
+
+@app.route("/produto")
+def produto():
+    """Um produto em todos os mercados, do mais barato ao mais caro."""
+    chave = (request.args.get("p") or "").strip()
+    repo = repositorio()
+    nomes = _nomes_mercados(repo)
+    achado = produto_por_chave(repo.precos, chave, nomes) if chave else None
+    if achado is None:
+        abort(404)
+
+    # Itens da cesta: outras marcas do mesmo item, para comparar de verdade
+    # ("arroz" e não só "ARROZ TIO JOAO 5KG").
+    similares = []
+    if achado.item_cesta:
+        similares = [p for p in agrupar_produtos(repo.por_item(achado.item_cesta), nomes)
+                     if p.chave != achado.chave]
+        similares.sort(key=lambda p: p.menor)
+
+    return render_template(
+        "produto.html",
+        produto=achado,
+        similares=similares[:10],
+        nome_item=nome_do_item(achado.item_cesta) if achado.item_cesta else None,
+        nome_categoria=nome_da_categoria,
     )
 
 
@@ -564,17 +683,13 @@ def produtos():
     termo = (request.args.get("q") or "").strip()
     repo = repositorio()
 
-    achados = repo.buscar_produto(termo) if termo else []
-    achados.sort(key=lambda p: p.preco)
+    achados = []
+    if termo:
+        # Uma linha por produto (não por cupom), do menor preço ao maior.
+        achados = agrupar_produtos(repo.buscar_produto(termo), _nomes_mercados(repo))
+        achados.sort(key=lambda p: p.menor)
 
-    resumo = None
-    if len(achados) >= 2:
-        try:
-            resumo = resumir([p.preco for p in achados])
-        except DadosInsuficientesError:
-            resumo = None
-
-    return render_template("produtos.html", termo=termo, achados=achados, resumo=resumo)
+    return render_template("produtos.html", termo=termo, achados=achados)
 
 
 @app.route("/categorias")
@@ -586,7 +701,7 @@ def categorias(categoria: str | None = None):
 
     achados = []
     if categoria and categoria in todas_as_categorias():
-        achados = sorted(repo.por_categoria(categoria), key=lambda p: p.preco)
+        achados = agrupar_produtos(repo.por_categoria(categoria), _nomes_mercados(repo))
 
     return render_template(
         "categorias.html",

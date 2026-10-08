@@ -285,8 +285,8 @@
         '">Vale a pena ir?</a>'
       : "";
     const principal = local.cnpj
-      ? '<a class="botao" style="padding:11px 18px;font-size:14px" href="/produtos?q=' +
-        encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>'
+      ? '<a class="botao" style="padding:11px 18px;font-size:14px" href="/mercado/' +
+        encodeURIComponent(local.cnpj) + '">Ver preços</a>'
       : '<a class="botao" style="padding:11px 18px;font-size:14px" href="/enviar">Enviar cupom daqui</a>';
 
     acoes.innerHTML = valores + navegacao +

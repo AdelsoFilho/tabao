@@ -429,6 +429,18 @@ def contexto_global():
 MINIMO_ITENS_RANKING = 3
 
 
+def _nome_do_ponto(local) -> str:
+    """
+    Nome de um ponto do mapa para exibir.
+
+    Do OpenStreetMap vem o nome da fachada ("Carrefour Sudoeste"); de um ponto
+    localizado pelo cupom, a razão social, que precisa de limpeza.
+    """
+    if local.fonte == "cupom":
+        return nome_amigavel(local.nome)
+    return local.nome[:1].upper() + local.nome[1:]
+
+
 def _nomes_mercados(repo) -> dict[str, str]:
     """
     CNPJ -> nome para exibir.
@@ -438,13 +450,11 @@ def _nomes_mercados(repo) -> dict[str, str]:
     """
     pontos: dict[str, set[str]] = {}
     for local in _mercados_com_precos(repo):
-        pontos.setdefault(local.cnpj, set()).add(local.nome)
+        pontos.setdefault(local.cnpj, set()).add(_nome_do_ponto(local))
     nomes = {cnpj: nome_amigavel(razao) for cnpj, razao in repo.estabelecimentos().items()}
     for cnpj, conjunto in pontos.items():
         if len(conjunto) == 1:
-            nome = next(iter(conjunto))
-            # Nomes do OpenStreetMap às vezes vêm todo em minúsculas.
-            nomes[cnpj] = nome[:1].upper() + nome[1:]
+            nomes[cnpj] = next(iter(conjunto))
     return nomes
 
 
@@ -811,7 +821,7 @@ def inicio():
         }
 
     locais = [{
-        "nome": local.nome,
+        "nome": _nome_do_ponto(local),
         "latitude": local.latitude,
         "longitude": local.longitude,
         "tipo": local.tipo,

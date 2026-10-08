@@ -1392,6 +1392,7 @@ def test_cartao_do_mapa_leva_para_a_comparacao(cliente_web, cupom_real):
 
     html = cliente_web.app.test_client().get("/mapa").get_data(as_text=True)
     assert "/comparar?cnpj=" in html
+    assert "/mercado/' +" in html          # "Ver preços" leva à página do mercado
     assert "Onde compensa comprar?" in html
     assert "painel-vale" not in html
 

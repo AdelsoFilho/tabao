@@ -1410,6 +1410,7 @@ from tabao.catalogo import agrupar_produtos, nome_amigavel
     ("ITAUCA DISTRIBUICAO S/A", "Itauca Distribuicao"),
     ("ATACADAO S.A.", "Atacadao"),
     ("MEGA ME SUPERMERCADO ME", "Mega Me Supermercado"),
+    ("CENCOSUD BRASIL COMERCIAL SA", "Cencosud Brasil Comercial"),
 ])
 def test_nome_amigavel(razao, esperado):
     assert nome_amigavel(razao) == esperado

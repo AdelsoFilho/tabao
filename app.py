@@ -442,7 +442,9 @@ def _nomes_mercados(repo) -> dict[str, str]:
     nomes = {cnpj: nome_amigavel(razao) for cnpj, razao in repo.estabelecimentos().items()}
     for cnpj, conjunto in pontos.items():
         if len(conjunto) == 1:
-            nomes[cnpj] = next(iter(conjunto))
+            nome = next(iter(conjunto))
+            # Nomes do OpenStreetMap às vezes vêm todo em minúsculas.
+            nomes[cnpj] = nome[:1].upper() + nome[1:]
     return nomes
 
 

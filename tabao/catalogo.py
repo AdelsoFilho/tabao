@@ -22,7 +22,7 @@ from .produtos import normalizar
 _RUIDO_RAZAO = re.compile(
     r"^\(\d+\)\s*|"
     r"\b(ltda|ltd|s\s*/\s*a|s\.\s*a\.?|epp|eireli)(?=\W|$)\.?|"
-    r"\bme$|"                                  # "ME" só no fim: "MEGA ME" é nome
+    r"\b(me|sa)$|"                             # "ME"/"SA" só no fim: "MEGA ME" é nome
     r"\bcom(ercio)?\.?\s+e\s+ind(ustria)?\b\.?",
     re.IGNORECASE,
 )

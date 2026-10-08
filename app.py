@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tabao import sefaz
 from tabao.categorias import nome_da_categoria, todas_as_categorias
-from tabao.cesta import estatisticas_do_item, montar_ranking
+from tabao.cesta import cesta_comparavel, estatisticas_do_item, montar_ranking
 from tabao.categorias import categorizar
 from tabao.chave import ChaveInvalidaError, interpretar
 from tabao.estatistica import DadosInsuficientesError, resumir
@@ -572,10 +572,18 @@ def api_viabilidade():
     custos = {c.cnpj: c for c in montar_ranking(repo.precos, cobertura_minima=0.0).estabelecimentos}
     registro = repo.registro_estabelecimentos
 
-    candidatos = [
-        (e.nome, cnpj, custos[cnpj].custo_total, (e.latitude, e.longitude))
-        for cnpj, e in registro.items()
+    no_mapa = [
+        custos[cnpj] for cnpj, e in registro.items()
         if e.localizado and cnpj in custos and custos[cnpj].custo_total > 0
+    ]
+    # Todos comparados sobre os mesmos itens: senão quem tem menos itens
+    # registrados parece mais barato só por isso.
+    comparavel = cesta_comparavel(no_mapa)
+
+    candidatos = [
+        (registro[c.cnpj].nome, c.cnpj, comparavel.custos[c.cnpj],
+         (registro[c.cnpj].latitude, registro[c.cnpj].longitude))
+        for c in no_mapa
     ]
 
     if not candidatos:
@@ -596,6 +604,7 @@ def api_viabilidade():
         "custo_combustivel": v.custo_combustivel,
         "custo_total": v.custo_total,
         "rota_real": v.trajeto.metodo == "ruas",
+        "itens_estimados": comparavel.estimados.get(v.cnpj, 0),
     } for v in avaliacoes]
 
     mais_perto = min(avaliacoes, key=lambda v: v.distancia_km)
@@ -606,7 +615,13 @@ def api_viabilidade():
         comparacao["mais_perto"] = mais_perto.nome
         comparacao["alternativa"] = melhor.nome
 
-    return jsonify({"resultados": resultados, "comparacao": comparacao})
+    return jsonify({
+        "resultados": resultados,
+        "comparacao": comparacao,
+        "itens_comparados": len(comparavel.itens),
+        "nomes_itens": [nome_do_item(i) for i in comparavel.itens],
+        "metodo": comparavel.metodo,
+    })
 
 
 @app.route("/api/rota")

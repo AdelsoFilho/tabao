@@ -347,6 +347,7 @@
         }).addTo(mapa);
         L.polyline(d.pontos, { color: "#3FBF6F", weight: 4 }).addTo(camadaRota);
         mapa.fitBounds(camadaRota.getBounds().pad(0.15));
+        if (local.cnpj) compararEste(local, origem, p);
 
         const tempo = d.duracao_min ? Math.round(d.duracao_min) + " min · " : "";
         resumo.innerHTML =
@@ -364,6 +365,37 @@
                 : "Não consegui obter sua localização. Tente de novo em um lugar aberto.") +
         "</div>";
     });
+  }
+
+  // Responde o "vale a pena?" do botão: onde este mercado fica, contando a
+  // gasolina, entre todos os que têm preços.
+  function compararEste(local, origem, p) {
+    const alvo = document.createElement("div");
+    alvo.style.cssText = "margin-top:8px;font-size:13px;color:var(--suave)";
+    alvo.textContent = "Comparando com os outros mercados...";
+    document.getElementById("resumo-rota").appendChild(alvo);
+
+    fetch("/api/viabilidade?lat=" + origem[0] + "&lon=" + origem[1] +
+          "&consumo=" + p.consumo + "&preco=" + p.preco, { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function (d) {
+        const lista = d.resultados || [];
+        const pos = lista.findIndex(function (r) { return r.cnpj === local.cnpj; });
+        if (pos < 0 || lista.length < 2) {
+          alvo.textContent = "Ainda não há outro mercado com preços para comparar.";
+          return;
+        }
+        const este = lista[pos], melhor = lista[0];
+        alvo.style.color = "var(--tinta)";
+        alvo.innerHTML = pos === 0
+          ? "<strong>Vale a pena:</strong> contando a gasolina, é o mais em conta dos " +
+            lista.length + " mercados (R$ " + este.custo_total.toFixed(2) + ")."
+          : "<strong>Não é o melhor:</strong> " + melhor.nome + " sai R$ " +
+            (este.custo_total - melhor.custo_total).toFixed(2) +
+            " mais barato, já contando a gasolina.";
+        alvo.innerHTML += '<div style="color:var(--suave);margin-top:3px">' + notaItens(d) + "</div>";
+      })
+      .catch(function () { alvo.textContent = "Não consegui comparar com os outros mercados agora."; });
   }
 
   // Uma nova tentativa antes de desistir: a rede do celular oscila muito.
@@ -482,6 +514,17 @@
       });
   }
 
+  // Diz sobre quais itens a comparação foi feita: sem isso o usuário não tem
+  // como saber que mercados com cestas diferentes estão sendo medidos igual.
+  function notaItens(dados) {
+    if (!dados.itens_comparados) return "";
+    const lista = (dados.nomes_itens || []).join(", ");
+    return dados.metodo === "comum"
+      ? "Comparando os " + dados.itens_comparados + " itens que todos têm: " + lista
+      : "Poucos itens em comum: comparando " + dados.itens_comparados +
+        " itens, com os que faltam estimados pela média da região";
+  }
+
   function desenhar(dados, p) {
     const fechar = '<button class="fechar" onclick="document.getElementById(\'painel-vale\')' +
                    '.classList.remove(\'visivel\')">&times;</button>';
@@ -495,7 +538,8 @@
     let html = fechar +
       '<div class="titulo-painel">Vale a pena ir até lá?</div>' +
       '<div class="nota">Compra + combustível de ida e volta · ' +
-      p.consumo + " km/l · R$ " + p.preco.toFixed(2) + "/L</div>";
+      p.consumo + " km/l · R$ " + p.preco.toFixed(2) + "/L<br>" +
+      notaItens(dados) + "</div>";
 
     dados.resultados.slice(0, 4).forEach(function (r, i) {
       html +=
@@ -504,7 +548,9 @@
         '<div class="corpo"><div class="titulo">' + r.nome + "</div>" +
         '<div class="detalhe">' + r.distancia_km + " km" +
         (r.rota_real ? "" : " (estimado)") + " · compra R$ " + r.custo_compra.toFixed(2) +
-        " + combustível R$ " + r.custo_combustivel.toFixed(2) + "</div></div>" +
+        " + combustível R$ " + r.custo_combustivel.toFixed(2) +
+        (r.itens_estimados ? " · " + r.itens_estimados + " item(ns) pela média da região" : "") +
+        "</div></div>" +
         '<div class="valor">R$ ' + r.custo_total.toFixed(2) + "</div></div>";
     });
 

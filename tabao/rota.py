@@ -17,6 +17,7 @@ disponível aplica-se um fator de desvio antes de calcular o custo.
 """
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -219,10 +220,17 @@ def avaliar(origem: tuple[float, float],
     ordenado do menor custo total para o maior — que pode ser uma ordem
     diferente da do preço de prateleira, e é justamente esse o ponto.
     """
-    resultado: list[Viabilidade] = []
+    candidatos = list(candidatos)
 
-    for nome, cnpj, custo_compra, destino in candidatos:
-        trajeto = calcular_trajeto(origem, destino, usar_ruas=usar_ruas)
+    # As rotas são calculadas em paralelo: uma a uma, 8 mercados × 8 s de
+    # espera passavam do tempo máximo da função e a tela ficava parada.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        trajetos = list(executor.map(
+            lambda c: calcular_trajeto(origem, c[3], usar_ruas=usar_ruas), candidatos
+        ))
+
+    resultado: list[Viabilidade] = []
+    for (nome, cnpj, custo_compra, _destino), trajeto in zip(candidatos, trajetos):
         combustivel = custo_do_trajeto(
             trajeto.distancia_km, consumo_km_l, preco_combustivel
         )

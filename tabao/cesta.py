@@ -189,6 +189,58 @@ def montar_ranking(
     return Ranking(estabelecimentos=elegiveis, itens_considerados=itens_considerados)
 
 
+# Abaixo disto, os itens em comum dizem pouco sobre a compra inteira.
+MINIMO_ITENS_EM_COMUM = 3
+
+
+@dataclass
+class CestaComparavel:
+    """Custo de cada mercado calculado sobre o MESMO conjunto de itens."""
+
+    custos: dict[str, float]          # cnpj -> custo da cesta comparável
+    itens: list[str]                  # itens que entraram na conta
+    metodo: str                       # "comum" ou "mediana"
+    estimados: dict[str, int] = field(default_factory=dict)  # cnpj -> itens preenchidos
+
+
+def cesta_comparavel(custos: list[CustoEstabelecimento],
+                     minimo_comum: int = MINIMO_ITENS_EM_COMUM) -> CestaComparavel:
+    """
+    Deixa os mercados comparáveis entre si.
+
+    Somar a cesta de cada mercado com os itens que ele tem é injusto: quem tem
+    7 itens registrados parece mais barato do que quem tem 13. A regra:
+
+    1. usa só os itens que TODOS os mercados têm;
+    2. se forem menos que `minimo_comum`, usa todos os itens vistos e preenche
+       os que faltam em cada mercado com a mediana da região, informando
+       quantos foram estimados.
+    """
+    if not custos:
+        return CestaComparavel(custos={}, itens=[], metodo="comum")
+
+    comuns = set.intersection(*(set(c.detalhe) for c in custos))
+    if len(comuns) >= minimo_comum or len(custos) == 1:
+        itens = sorted(comuns)
+        return CestaComparavel(
+            custos={c.cnpj: round(sum(c.detalhe[i] for i in itens), 2) for c in custos},
+            itens=itens, metodo="comum",
+        )
+
+    itens = sorted(set().union(*(c.detalhe for c in custos)))
+    referencia = {
+        i: mediana([c.detalhe[i] for c in custos if i in c.detalhe]) for i in itens
+    }
+    return CestaComparavel(
+        custos={
+            c.cnpj: round(sum(c.detalhe.get(i, referencia[i]) for i in itens), 2)
+            for c in custos
+        },
+        itens=itens, metodo="mediana",
+        estimados={c.cnpj: sum(1 for i in itens if i not in c.detalhe) for c in custos},
+    )
+
+
 def estatisticas_do_item(precos: list[PrecoObservado], item: str) -> dict:
     """
     Resumo estatístico dos preços de um item na base inteira.

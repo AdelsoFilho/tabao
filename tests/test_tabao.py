@@ -1192,3 +1192,61 @@ def test_mapa_mostra_so_mercados_com_precos(cliente_web, monkeypatch, cupom_real
     assert all(local["cnpj"] for local in locais)
     assert all("tipo" in local for local in locais)
     assert "#C1440E\"></i>sem preços" not in html
+
+
+# --------------------------------------------------------------------------
+# Comparação justa entre mercados com cestas diferentes
+# --------------------------------------------------------------------------
+
+from tabao.cesta import CustoEstabelecimento, cesta_comparavel
+
+
+def _custo(cnpj, detalhe):
+    return CustoEstabelecimento(cnpj=cnpj, nome=cnpj, custo_total=sum(detalhe.values()),
+                                itens_encontrados=len(detalhe), detalhe=detalhe)
+
+
+def test_comparacao_usa_so_itens_em_comum():
+    # B parece mais barato no total só porque tem menos itens registrados.
+    a = _custo("A", {"arroz": 20, "feijao": 8, "leite": 5, "cafe": 15, "carne": 40})
+    b = _custo("B", {"arroz": 22, "feijao": 9, "leite": 6})
+    assert b.custo_total < a.custo_total
+
+    comparavel = cesta_comparavel([a, b])
+    assert comparavel.metodo == "comum"
+    assert comparavel.itens == ["arroz", "feijao", "leite"]
+    assert comparavel.custos == {"A": 33, "B": 37}
+
+
+def test_poucos_itens_em_comum_preenche_pela_mediana():
+    a = _custo("A", {"arroz": 20, "feijao": 8})
+    b = _custo("B", {"arroz": 22, "leite": 6})
+    comparavel = cesta_comparavel([a, b])
+    assert comparavel.metodo == "mediana"
+    assert comparavel.itens == ["arroz", "feijao", "leite"]
+    assert comparavel.custos == {"A": 34, "B": 36}
+    assert comparavel.estimados == {"A": 1, "B": 1}
+
+
+def test_rotas_da_viabilidade_sao_calculadas_em_paralelo(monkeypatch):
+    import threading
+    import time as _time
+    from tabao import rota
+
+    ativos, pico = [0], [0]
+    trava = threading.Lock()
+
+    def trajeto_lento(origem, destino, usar_ruas=True, com_desenho=False):
+        with trava:
+            ativos[0] += 1
+            pico[0] = max(pico[0], ativos[0])
+        _time.sleep(0.05)
+        with trava:
+            ativos[0] -= 1
+        return rota.trajeto_em_linha_reta(origem, destino)
+
+    monkeypatch.setattr(rota, "calcular_trajeto", trajeto_lento)
+    candidatos = [(f"M{i}", str(i), 100.0 + i, (-16.6 - i / 100, -49.2)) for i in range(4)]
+    resultado = rota.avaliar((-16.6, -49.2), candidatos)
+    assert len(resultado) == 4
+    assert pico[0] > 1

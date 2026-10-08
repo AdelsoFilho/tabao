@@ -28,6 +28,10 @@
                   background:#fff;border:1px solid var(--linha);border-radius:var(--raio);
                   padding:15px 17px;box-shadow:0 6px 24px rgba(27,58,42,.22);display:none}
     .cartao-local.visivel{display:block}
+    .cartao-local{max-height:62%;overflow-y:auto;overscroll-behavior:contain}
+    /* Com a rota na tela, o cartão encolhe para o mapa mostrar o caminho. */
+    .cartao-local.compacto .meta,.cartao-local.compacto .rota-rotulo,
+    .cartao-local.compacto .rota-apps{display:none}
     .cartao-local .nome{font-weight:800;font-size:16.5px;margin-bottom:2px;padding-right:20px}
     .cartao-local .meta{color:var(--suave);font-size:13px;margin-bottom:12px}
     .fechar{position:absolute;top:10px;right:12px;background:none;border:none;
@@ -67,6 +71,12 @@
     .etiqueta-preco::before{display:none}   /* remove a setinha do tooltip */
 
     /* "Como chegar": botões que abrem o app de navegação do celular. */
+    /* Ícone do seletor de camadas desenhado aqui: o Leaflet procura um
+       layers.png que não vem no pacote e o botão ficava um quadrado vazio. */
+    .leaflet-control-layers-toggle,
+    .leaflet-retina .leaflet-control-layers-toggle{
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231B3A2A' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='m12 3 9 5-9 5-9-5 9-5Z'/%3E%3Cpath d='m3 13 9 5 9-5'/%3E%3C/svg%3E");
+      background-size:24px 24px}
     .rota-rotulo{font-size:11px;color:var(--suave);font-weight:800;text-transform:uppercase;
                  letter-spacing:.04em;margin:2px 0 7px}
     .rota-apps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
@@ -188,6 +198,8 @@
     return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   }
 
+  function km(n) { return String(Math.round(n * 10) / 10).replace(".", ","); }
+
   // Texto curto do valor de um mercado: a cesta quando dá, senão nº de preços.
   function etiquetaValor(local) {
     if (local.cesta) return "R$ " + reais(local.cesta);
@@ -296,6 +308,7 @@
     document.getElementById("btn-rota")
             .addEventListener("click", function () { tracarRota(local); });
 
+    cartao.classList.remove("compacto");
     cartao.classList.add("visivel");
     legenda.style.display = "none";
   }
@@ -343,21 +356,34 @@
       }).then(function (d) {
 
         limparRota();
-        camadaRota = L.polyline(d.pontos, {
-          color: "#1B3A2A", weight: 7, opacity: 0.35
-        }).addTo(mapa);
-        L.polyline(d.pontos, { color: "#3FBF6F", weight: 4 }).addTo(camadaRota);
-        mapa.fitBounds(camadaRota.getBounds().pad(0.15));
-        if (local.cnpj) compararEste(local, origem, p);
+        // Sombra escura + linha verde por cima, agrupadas para sair juntas.
+        // (Uma polyline não contém outra: adicionar uma à outra quebrava aqui.)
+        camadaRota = L.featureGroup([
+          L.polyline(d.pontos, { color: "#1B3A2A", weight: 7, opacity: 0.35 }),
+          L.polyline(d.pontos, { color: "#3FBF6F", weight: 4 }),
+        ]).addTo(mapa);
+        cartao.classList.add("compacto");
+        // Enquadra no espaço que sobra acima do cartão: no celular ele cobre
+        // metade da tela e escondia a rota inteira.
+        mapa.fitBounds(camadaRota.getBounds(), {
+          paddingTopLeft: [24, 150],
+          paddingBottomRight: [24, cartao.offsetHeight + 24],
+        });
 
         const tempo = d.duracao_min ? Math.round(d.duracao_min) + " min · " : "";
         resumo.innerHTML =
           '<div style="background:var(--creme);border-radius:12px;padding:11px 13px;font-size:13.5px">' +
-          "<strong>" + tempo + d.distancia_km + " km</strong>" +
+          "<strong>" + tempo + km(d.distancia_km) + " km</strong>" +
           (d.rota_real ? "" : " (estimado)") +
           '<div style="color:var(--suave);font-size:12.5px;margin-top:3px">' +
-          "Ida e volta: " + d.ida_e_volta_km + " km · R$ " +
-          d.custo_combustivel.toFixed(2) + " de combustível</div></div>";
+          "Ida e volta: " + km(d.ida_e_volta_km) + " km · R$ " +
+          reais(d.custo_combustivel) + " de combustível</div></div>";
+        // Depois do resumo: escrever antes fazia o resumo apagar a comparação.
+        if (local.cnpj) compararEste(local, origem, p);
+      }).catch(function (erro) {
+        console.error("Falha ao desenhar a rota:", erro);
+        resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
+                           "Não consegui mostrar a rota agora.</div>";
       });
     }).catch(function (erro) {
       const negado = erro && erro.code === 1;
@@ -390,9 +416,9 @@
         alvo.style.color = "var(--tinta)";
         alvo.innerHTML = pos === 0
           ? "<strong>Vale a pena:</strong> contando a gasolina, é o mais em conta dos " +
-            lista.length + " mercados (R$ " + este.custo_total.toFixed(2) + ")."
+            lista.length + " mercados (R$ " + reais(este.custo_total) + ")."
           : "<strong>Não é o melhor:</strong> " + melhor.nome + " sai R$ " +
-            (este.custo_total - melhor.custo_total).toFixed(2) +
+            reais(este.custo_total - melhor.custo_total) +
             " mais barato, já contando a gasolina.";
         alvo.innerHTML += '<div style="color:var(--suave);margin-top:3px">' + notaItens(d) + "</div>";
       })
@@ -555,12 +581,12 @@
         '<div class="linha-vale">' +
         '<span class="medalha ' + (i === 0 ? "primeiro" : "") + '">' + (i + 1) + "</span>" +
         '<div class="corpo"><div class="titulo">' + r.nome + "</div>" +
-        '<div class="detalhe">' + r.distancia_km + " km" +
-        (r.rota_real ? "" : " (estimado)") + " · compra R$ " + r.custo_compra.toFixed(2) +
-        " + combustível R$ " + r.custo_combustivel.toFixed(2) +
+        '<div class="detalhe">' + km(r.distancia_km) + " km" +
+        (r.rota_real ? "" : " (estimado)") + " · compra R$ " + reais(r.custo_compra) +
+        " + combustível R$ " + reais(r.custo_combustivel) +
         (r.itens_estimados ? " · " + r.itens_estimados + " item(ns) pela média da região" : "") +
         "</div></div>" +
-        '<div class="valor">R$ ' + r.custo_total.toFixed(2) + "</div></div>";
+        '<div class="valor">R$ ' + reais(r.custo_total) + "</div></div>";
     });
 
     if (dados.comparacao) {
@@ -568,10 +594,10 @@
       html += '<div class="veredito ' + (c.compensa ? "sim" : "nao") + '">' +
         (c.compensa
           ? "Compensa ir até " + c.alternativa + ": mesmo gastando R$ " +
-            c.custo_extra_do_trajeto.toFixed(2) + " a mais de combustível por " +
-            c.km_a_mais + " km, você economiza <b>R$ " + c.saldo.toFixed(2) + "</b>."
-          : "Não compensa: a economia de R$ " + c.economia_na_compra.toFixed(2) +
-            " não cobre os R$ " + c.custo_extra_do_trajeto.toFixed(2) +
+            reais(c.custo_extra_do_trajeto) + " a mais de combustível por " +
+            km(c.km_a_mais) + " km, você economiza <b>R$ " + reais(c.saldo) + "</b>."
+          : "Não compensa: a economia de R$ " + reais(c.economia_na_compra) +
+            " não cobre os R$ " + reais(c.custo_extra_do_trajeto) +
             " de combustível a mais.") +
         "</div>";
     }

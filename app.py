@@ -34,8 +34,7 @@ from tabao.qrcode_nfce import QRCodeInvalidoError, interpretar_url, ler_de_image
 from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimentos,
                         importar_area, locais_dos_estabelecimentos,
                         localizar_estabelecimentos, mesclar)
-from tabao.rota import (CONSUMO_PADRAO_KM_L, FATOR_DESVIO_URBANO,
-                       PRECO_COMBUSTIVEL_PADRAO, avaliar,
+from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import BancoError, criar_repositorio
 from tabao.contas import (COMBUSTIVEIS, CONSUMO_MEDIO_KM_L, SENHA_MINIMA, ContaError,
@@ -718,15 +717,29 @@ def inicio():
         cache=cache,
         total_locais=len(todos),
         por_tipo=dict(sorted(por_tipo.items(), key=lambda kv: -kv[1])),
-        fator_desvio=FATOR_DESVIO_URBANO,
-        consumo_padrao=CONSUMO_PADRAO_KM_L,
-        preco_padrao=PRECO_COMBUSTIVEL_PADRAO,
-        perfil_json=json.dumps(
-            usuario_atual().preferencias(PRECO_COMBUSTIVEL_PADRAO) if usuario_atual() else None
-        ),
+
         tipos=TIPOS_OSM,
         locais_json=json.dumps(locais, ensure_ascii=False),
         centro_json=json.dumps(centro),
+    )
+
+
+@app.route("/comparar")
+def comparar():
+    """
+    Lista de mercados do mais ao menos em conta (cesta + combustível).
+
+    Tela própria, e não um painel sobre o mapa: com dezenas de mercados, o
+    usuário precisa ver nome, endereço e um "ver no mapa" de cada um.
+    """
+    usuario = usuario_atual()
+    return render_template(
+        "comparar.html",
+        perfil_json=json.dumps(
+            usuario.preferencias(PRECO_COMBUSTIVEL_PADRAO) if usuario else None
+        ),
+        consumo_padrao=CONSUMO_PADRAO_KM_L,
+        preco_padrao=PRECO_COMBUSTIVEL_PADRAO,
     )
 
 
@@ -775,9 +788,11 @@ def api_viabilidade():
     # Roteamento real só até 8 mercados, para não abusar do serviço gratuito.
     avaliacoes = avaliar(origem, candidatos, consumo, preco, usar_ruas=len(candidatos) <= 8)
 
+    enderecos = {(l.cnpj, l.latitude, l.longitude): l.endereco for l in locais}
     resultados = [{
         "nome": v.nome,
         "cnpj": v.cnpj,
+        "endereco": enderecos.get((v.cnpj, *v.destino), "") if v.destino else "",
         "custo_compra": v.custo_compra,
         "distancia_km": v.distancia_km,
         "duracao_min": v.trajeto.duracao_min,

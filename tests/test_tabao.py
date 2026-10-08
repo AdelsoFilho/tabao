@@ -1369,3 +1369,28 @@ def test_ler_veiculo_valida_numeros():
         ler_veiculo("gasolina", "6", "300", False)
     with pytest.raises(ContaError):
         ler_veiculo("diesel-de-foguete", "6", "", True)
+
+
+def test_tela_de_comparacao_abre_com_e_sem_login(web_contas):
+    cliente = web_contas.app.test_client()
+    html = cliente.get("/comparar").get_data(as_text=True)
+    assert "Onde compensa comprar" in html
+    assert "const PERFIL = null" in html
+
+    _cadastrar(cliente)
+    html = cliente.get("/comparar").get_data(as_text=True)
+    assert '"consumo_estimado": true' in html
+
+
+def test_cartao_do_mapa_leva_para_a_comparacao(cliente_web, cupom_real):
+    repo = Repositorio(cliente_web.BASE)
+    repo.registrar_cupom(cupom_real)
+    mercado = repo.registro_estabelecimentos[cupom_real.estabelecimento.cnpj]
+    mercado.latitude, mercado.longitude = -16.65, -49.25
+    repo.atualizar_estabelecimento(mercado)
+    repo.salvar()
+
+    html = cliente_web.app.test_client().get("/mapa").get_data(as_text=True)
+    assert "/comparar?cnpj=" in html
+    assert "Onde compensa comprar?" in html
+    assert "painel-vale" not in html

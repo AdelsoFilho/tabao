@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% set pagina = "mapa" %}
+{% block titulo %}Onde compensa comprar — TáBão{% endblock %}
+{% block cabeca %}
+  <style>
+    .resumo-veiculo{color:var(--suave);font-size:13px;margin:-10px 0 14px}
+    .estado{color:var(--suave);font-size:14.5px;text-align:center;padding:28px 10px}
+    .estado .botao{margin-top:14px}
+
+    .mercado{background:var(--branco);border:1px solid var(--linha);border-radius:var(--raio);
+             padding:14px 15px;margin-bottom:10px}
+    .mercado.destaque{border:2px solid var(--musgo);background:#FAFCF8}
+    .mercado .topo{display:flex;align-items:flex-start;gap:11px}
+    .posicao{flex:none;width:28px;height:28px;border-radius:50%;background:var(--creme);
+             color:var(--verde);font-weight:800;font-size:13.5px;
+             display:flex;align-items:center;justify-content:center}
+    .mercado.primeiro .posicao{background:var(--verde);color:#fff}
+    .mercado .corpo{flex:1;min-width:0}
+    .mercado .nome{font-weight:700;font-size:15.5px;line-height:1.3}
+    .mercado .marca-aqui{display:inline-block;font-size:11px;font-weight:700;color:var(--verde);
+                         background:#E8F0E2;border-radius:99px;padding:1px 8px;margin-left:4px;
+                         vertical-align:2px}
+    .mercado .endereco{color:var(--suave);font-size:12.5px;margin-top:2px}
+    .mercado .total{text-align:right;flex:none}
+    .mercado .total strong{display:block;font-size:17px;color:var(--verde);white-space:nowrap}
+    .mercado .total span{font-size:11.5px;color:var(--suave);white-space:nowrap}
+    .mercado .contas{color:var(--suave);font-size:12.5px;margin:8px 0 0 39px}
+    .mercado .diferenca{font-size:12.5px;font-weight:600;margin:4px 0 0 39px}
+    .diferenca.mais{color:#8f2f0c}
+    .diferenca.menos{color:#24521f}
+    .mercado .botoes{display:flex;gap:8px;margin:11px 0 0 39px;flex-wrap:wrap}
+    .mercado .botoes a{padding:8px 13px;font-size:13px}
+
+    .nota-itens{color:var(--suave);font-size:12.5px;line-height:1.5;margin-top:16px}
+    .nota-itens a{font-weight:600}
+  </style>
+{% endblock %}
+{% block conteudo %}
+
+<h1>Onde compensa comprar</h1>
+<p class="sub">Cesta + combustível de ida e volta, a partir de onde você está.</p>
+<div class="resumo-veiculo" id="resumo-veiculo"></div>
+
+<div id="lista">
+  <div class="estado" id="estado">Pegando sua localização…</div>
+</div>
+
+<div class="nota-itens" id="nota-itens"></div>
+
+<script>
+(function () {
+  "use strict";
+  const PERFIL = {{ perfil_json|safe }};
+  const PADRAO = { consumo: {{ consumo_padrao }}, preco: {{ preco_padrao }},
+                   consumo_estimado: true, anonimo: true };
+  const p = PERFIL || PADRAO;
+
+  // Mercado de onde a pessoa veio (botão "Vale a pena ir?" do mapa).
+  const busca = new URLSearchParams(location.search);
+  const alvo = busca.get("cnpj") ? {
+    cnpj: busca.get("cnpj"),
+    lat: parseFloat(busca.get("lat")), lon: parseFloat(busca.get("lon")),
+  } : null;
+
+  const lista = document.getElementById("lista");
+
+  function reais(n) {
+    return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  }
+  function km(n) { return String(Math.round(n * 10) / 10).replace(".", ","); }
+  function esc(t) {
+    return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function ehAlvo(r) {
+    return alvo && r.cnpj === alvo.cnpj &&
+           Math.abs(r.latitude - alvo.lat) < 1e-5 && Math.abs(r.longitude - alvo.lon) < 1e-5;
+  }
+
+  document.getElementById("resumo-veiculo").innerHTML =
+    "Seu carro: " + String(p.consumo).replace(".", ",") + " km/l · R$ " + reais(p.preco) + "/L" +
+    (p.anonimo
+      ? ' · <a href="/entrar?proximo=' + encodeURIComponent(location.pathname + location.search) +
+        '">entre</a> para usar os dados do seu carro'
+      : (p.consumo_estimado ? " (média nacional)" : "") + ' · <a href="/perfil">alterar</a>');
+
+  function mostrarErro(texto, comBotao) {
+    lista.innerHTML = '<div class="estado">' + texto +
+      (comBotao ? '<br><button class="botao" type="button" id="tentar">Tentar de novo</button>' : "") +
+      "</div>";
+    const b = document.getElementById("tentar");
+    if (b) b.addEventListener("click", iniciar);
+  }
+
+  function desenhar(dados) {
+    const resultados = dados.resultados || [];
+    if (!resultados.length) {
+      mostrarErro(dados.aviso || "Ainda não há mercados com preços para comparar.");
+      return;
+    }
+    const melhor = resultados[0];
+    const doAlvo = resultados.find(ehAlvo);
+
+    let html = "";
+    resultados.forEach(function (r, i) {
+      const destaque = ehAlvo(r);
+      const tempo = r.duracao_min ? Math.round(r.duracao_min) + " min · " : "";
+      const ref = doAlvo && !destaque ? doAlvo : (i > 0 ? melhor : null);
+      let diferenca = "";
+      if (ref) {
+        const d = r.custo_total - ref.custo_total;
+        if (Math.abs(d) >= 0.01) {
+          diferenca = '<div class="diferenca ' + (d > 0 ? "mais" : "menos") + '">R$ ' +
+            reais(Math.abs(d)) + (d > 0 ? " mais caro" : " mais barato") +
+            (ref === doAlvo ? " que o mercado escolhido" : " que o 1º") + "</div>";
+        }
+      }
+      const verNoMapa = "/mapa?foco=" + r.latitude + "," + r.longitude;
+      const chegar = "https://www.google.com/maps/dir/?api=1&destination=" + r.latitude + "," + r.longitude;
+
+      html +=
+        '<div class="mercado' + (i === 0 ? " primeiro" : "") + (destaque ? " destaque" : "") + '"' +
+        (destaque ? ' id="escolhido"' : "") + ">" +
+          '<div class="topo">' +
+            '<span class="posicao">' + (i + 1) + "</span>" +
+            '<div class="corpo"><div class="nome">' + esc(r.nome) +
+              (destaque ? '<span class="marca-aqui">escolhido</span>' : "") + "</div>" +
+              (r.endereco ? '<div class="endereco">' + esc(r.endereco) + "</div>" : "") +
+            "</div>" +
+            '<div class="total"><strong>R$ ' + reais(r.custo_total) + "</strong>" +
+              "<span>" + tempo + km(r.distancia_km) + " km" + (r.rota_real ? "" : " (est.)") +
+              "</span></div>" +
+          "</div>" +
+          '<div class="contas">Cesta R$ ' + reais(r.custo_compra) + " + combustível R$ " +
+            reais(r.custo_combustivel) +
+            (r.itens_estimados ? " · " + r.itens_estimados + " item(ns) pela média" : "") + "</div>" +
+          diferenca +
+          '<div class="botoes">' +
+            '<a class="botao secundario" href="' + verNoMapa + '">Ver no mapa</a>' +
+            '<a class="botao secundario" href="' + chegar + '" target="_blank" rel="noopener">Como chegar</a>' +
+          "</div>" +
+        "</div>";
+    });
+    lista.innerHTML = html;
+
+    const nomes = (dados.nomes_itens || []).join(", ");
+    document.getElementById("nota-itens").innerHTML = dados.metodo === "comum"
+      ? "Comparando os " + dados.itens_comparados + " itens que todos os mercados têm: " + esc(nomes) + "."
+      : "Os mercados têm poucos itens em comum, então comparamos " + dados.itens_comparados +
+        " itens (" + esc(nomes) + ") e estimamos os que faltam em cada um pela média da região. " +
+        '<a href="/enviar">Enviar cupons</a> deixa a comparação mais precisa.';
+
+    const escolhido = document.getElementById("escolhido");
+    if (escolhido) escolhido.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function calcular(origem) {
+    const estado = document.getElementById("estado");
+    if (estado) estado.textContent = "Calculando a rota até cada mercado…";
+    fetch("/api/viabilidade?lat=" + origem[0] + "&lon=" + origem[1] +
+          "&consumo=" + p.consumo + "&preco=" + p.preco, { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(desenhar)
+      .catch(function () { mostrarErro("Não consegui calcular agora.", true); });
+  }
+
+  function iniciar() {
+    lista.innerHTML = '<div class="estado" id="estado">Pegando sua localização…</div>';
+    if (!navigator.geolocation) {
+      mostrarErro("Seu navegador não informa a localização, e ela é necessária para a conta.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      function (pos) { calcular([pos.coords.latitude, pos.coords.longitude]); },
+      function (erro) {
+        mostrarErro(erro && erro.code === 1
+          ? "Autorize a localização no navegador: a conta depende da distância até cada mercado."
+          : "Não consegui obter sua localização.", true);
+      },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+    );
+  }
+  iniciar();
+})();
+</script>
+
+{% endblock %}

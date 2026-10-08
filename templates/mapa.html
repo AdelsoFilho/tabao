@@ -28,40 +28,17 @@
                   padding:15px 17px;box-shadow:0 6px 24px rgba(27,58,42,.22);display:none}
     .cartao-local.visivel{display:block}
     .cartao-local{max-height:62%;overflow-y:auto;overscroll-behavior:contain}
-    /* Com a rota na tela, o cartão encolhe para o mapa mostrar o caminho. */
-    .cartao-local.compacto .meta,.cartao-local.compacto .rota-rotulo,
-    .cartao-local.compacto .rota-apps{display:none}
     .cartao-local .nome{font-weight:800;font-size:16.5px;margin-bottom:2px;padding-right:20px}
     .cartao-local .meta{color:var(--suave);font-size:13px;margin-bottom:12px}
     .fechar{position:absolute;top:10px;right:12px;background:none;border:none;
             color:var(--suave);font-size:22px;line-height:1;padding:4px;cursor:pointer}
 
-    /* Painel "vale a pena": aparece depois que o usuário se localiza. */
-    .painel-vale{position:absolute;left:14px;right:14px;bottom:16px;z-index:402;
-                 background:#fff;border:1px solid var(--linha);border-radius:var(--raio);
-                 padding:16px;box-shadow:0 8px 28px rgba(27,58,42,.24);display:none;
-                 max-height:56%;overflow-y:auto}
-    .painel-vale.visivel{display:block}
-    .painel-vale .titulo-painel{font-weight:800;font-size:16.5px;padding-right:22px}
-    .painel-vale .nota{color:var(--suave);font-size:12px;margin:2px 0 10px}
-    .painel-vale .carregando{color:var(--suave);font-size:14px;padding:6px 0}
-    .linha-vale{display:flex;align-items:center;gap:11px;padding:9px 0;
-                border-bottom:1px solid var(--linha)}
-    .linha-vale:last-of-type{border-bottom:none}
-    .linha-vale .corpo{flex:1;min-width:0}
-    .linha-vale .titulo{font-weight:600;font-size:14.5px;overflow:hidden;
-                        text-overflow:ellipsis;white-space:nowrap}
-    .linha-vale .detalhe{color:var(--suave);font-size:12px;margin-top:2px}
-    .linha-vale .valor{font-weight:800;color:var(--verde);white-space:nowrap}
-    .veredito{margin-top:11px;padding:11px 13px;border-radius:12px;font-size:13.5px;line-height:1.45}
-    .veredito.sim{background:#E8F0E2;color:#24521f}
-    .veredito.nao{background:#FBEAE3;color:#8f2f0c}
-
-    .legenda{position:absolute;left:14px;bottom:16px;z-index:400;background:rgba(255,255,255,.95);
-             border:1px solid var(--linha);border-radius:99px;padding:7px 13px;
-             font-size:11.5px;color:var(--suave);display:flex;gap:12px;
-             box-shadow:0 2px 10px rgba(27,58,42,.16)}
-    .legenda i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px}
+    /* Atalho para a tela de comparação, no canto inferior do mapa. */
+    .atalho-comparar{position:absolute;left:14px;bottom:16px;z-index:400;
+             display:inline-flex;align-items:center;gap:7px;background:#fff;color:var(--escuro);
+             border-radius:99px;padding:10px 15px;font-size:13.5px;font-weight:700;
+             box-shadow:0 2px 10px rgba(27,58,42,.22)}
+    .atalho-comparar svg{width:16px;height:16px;color:var(--verde)}
 
     /* Etiqueta de preço sobre o marcador: discreta, só nos mercados com preços. */
     .etiqueta-preco{background:rgba(255,255,255,.92);color:#24521f;border:none;
@@ -143,7 +120,7 @@
   </div>
 
   <div class="acoes-mapa">
-    <button class="acao" id="btn-local" type="button" aria-label="Onde estou e vale a pena">
+    <button class="acao" id="btn-local" type="button" aria-label="Onde estou">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
@@ -158,11 +135,13 @@
     </button>
   </div>
 
-  <div class="legenda" id="legenda">
-    <span><i style="background:#2C5F2D"></i>com preços</span>
-  </div>
-
-  <div class="painel-vale" id="painel-vale"></div>
+  <a class="atalho-comparar" id="atalho-comparar" href="{{ url_for('comparar') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+    </svg>
+    Onde compensa comprar?
+  </a>
 
   <div class="cartao-local" id="cartao-local">
     <button class="fechar" id="fechar-cartao" type="button" aria-label="Fechar">&times;</button>
@@ -176,8 +155,6 @@
 <script>
   const LOCAIS = {{ locais_json|safe }};
   const CENTRO = {{ centro_json|safe }};
-  const FATOR_DESVIO = {{ fator_desvio }};
-  const PERFIL = {{ perfil_json|safe }};
 
   const mapa = L.map("mapa", { zoomControl: true, scrollWheelZoom: true })
                 .setView(CENTRO, 13);
@@ -247,11 +224,9 @@
 
   // Cartão inferior no lugar do balão padrão: é o padrão de app de mapa.
   const cartao = document.getElementById("cartao-local");
-  const painel = document.getElementById("painel-vale");
-  const legenda = document.getElementById("legenda");
+  const atalho = document.getElementById("atalho-comparar");
 
   function abrirCartao(local) {
-    painel.classList.remove("visivel");
     document.getElementById("cartao-nome").textContent = local.nome;
 
     let meta = [local.tipo_legivel, local.endereco].filter(Boolean).join(" · ");
@@ -302,9 +277,13 @@
           '<span class="ponto" style="background:#A2AAAD"></span>Apple Maps</a>' +
       '</div>';
 
-    // Rota interna: além de chegar, diz se COMPENSA (distância + combustível).
-    const rota = '<button class="botao secundario" type="button" id="btn-rota" ' +
-                 'style="padding:11px 18px;font-size:14px">Vale a pena ir?</button>';
+    // A comparação mora numa tela própria: aqui só o atalho, já apontando
+    // este mercado para ele aparecer destacado na lista.
+    const vale = local.cnpj
+      ? '<a class="botao secundario" style="padding:11px 18px;font-size:14px" href="/comparar?cnpj=' +
+        encodeURIComponent(local.cnpj) + "&lat=" + local.latitude + "&lon=" + local.longitude +
+        '">Vale a pena ir?</a>'
+      : "";
     const principal = local.cnpj
       ? '<a class="botao" style="padding:11px 18px;font-size:14px" href="/produtos?q=' +
         encodeURIComponent(local.nome.split(" ")[0]) + '">Ver preços</a>'
@@ -312,166 +291,15 @@
 
     acoes.innerHTML = valores + navegacao +
                       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-                      principal + rota + '</div>' +
-                      '<div id="resumo-rota" style="margin-top:11px"></div>';
+                      principal + vale + '</div>';
 
-    document.getElementById("btn-rota")
-            .addEventListener("click", function () { tracarRota(local); });
-
-    cartao.classList.remove("compacto");
     cartao.classList.add("visivel");
-    legenda.style.display = "none";
-  }
-
-  // ---------- traçado da rota até um mercado ----------
-  let camadaRota = null;
-
-  function limparRota() {
-    if (camadaRota) { mapa.removeLayer(camadaRota); camadaRota = null; }
-  }
-
-  function obterMinhaPosicao() {
-    return new Promise(function (resolve, reject) {
-      if (meuPonto) return resolve(meuPonto);
-      if (!navigator.geolocation) return reject();
-      navigator.geolocation.getCurrentPosition(
-        function (p) {
-          meuPonto = [p.coords.latitude, p.coords.longitude];
-          L.circleMarker(meuPonto, {
-            radius: 9, color: "#fff", weight: 3, fillColor: "#1C5D7A", fillOpacity: 1
-          }).addTo(mapa).bindPopup("Você está aqui");
-          resolve(meuPonto);
-        },
-        reject,
-        // Sem prazo, um GPS sem sinal deixa "Calculando a rota..." para sempre.
-        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-      );
-    });
-  }
-
-  function tracarRota(local) {
-    const resumo = document.getElementById("resumo-rota");
-    resumo.innerHTML = '<div style="color:var(--suave);font-size:13px">Calculando a rota...</div>';
-
-    obterMinhaPosicao().then(function (origem) {
-      const p = preferencias();
-      const url = "/api/rota?de_lat=" + origem[0] + "&de_lon=" + origem[1] +
-                  "&para_lat=" + local.latitude + "&para_lon=" + local.longitude +
-                  "&consumo=" + p.consumo + "&preco=" + p.preco;
-
-      buscarRota(url).catch(function () {
-        // Servidor inalcançável (sinal fraco, por exemplo): estima aqui mesmo,
-        // em linha reta com o mesmo fator de desvio urbano do servidor.
-        return estimarRota(origem, [local.latitude, local.longitude], p);
-      }).then(function (d) {
-
-        limparRota();
-        // Sombra escura + linha verde por cima, agrupadas para sair juntas.
-        // (Uma polyline não contém outra: adicionar uma à outra quebrava aqui.)
-        camadaRota = L.featureGroup([
-          L.polyline(d.pontos, { color: "#1B3A2A", weight: 7, opacity: 0.35 }),
-          L.polyline(d.pontos, { color: "#3FBF6F", weight: 4 }),
-        ]).addTo(mapa);
-        cartao.classList.add("compacto");
-        // Enquadra no espaço que sobra acima do cartão: no celular ele cobre
-        // metade da tela e escondia a rota inteira.
-        mapa.fitBounds(camadaRota.getBounds(), {
-          paddingTopLeft: [24, 150],
-          paddingBottomRight: [24, cartao.offsetHeight + 24],
-        });
-
-        const tempo = d.duracao_min ? Math.round(d.duracao_min) + " min · " : "";
-        resumo.innerHTML =
-          '<div style="background:var(--creme);border-radius:12px;padding:11px 13px;font-size:13.5px">' +
-          "<strong>" + tempo + km(d.distancia_km) + " km</strong>" +
-          (d.rota_real ? "" : " (estimado)") +
-          '<div style="color:var(--suave);font-size:12.5px;margin-top:3px">' +
-          "Ida e volta: " + km(d.ida_e_volta_km) + " km · R$ " +
-          reais(d.custo_combustivel) + " de combustível</div></div>";
-        // Depois do resumo: escrever antes fazia o resumo apagar a comparação.
-        if (local.cnpj) compararEste(local, origem, p);
-      }).catch(function (erro) {
-        console.error("Falha ao desenhar a rota:", erro);
-        resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
-                           "Não consegui mostrar a rota agora.</div>";
-      });
-    }).catch(function (erro) {
-      const negado = erro && erro.code === 1;
-      resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
-        (negado ? "Autorize a localização no navegador para traçar a rota."
-                : "Não consegui obter sua localização. Tente de novo em um lugar aberto.") +
-        "</div>";
-    });
-  }
-
-  // Responde o "vale a pena?" do botão: onde este mercado fica, contando a
-  // gasolina, entre todos os que têm preços.
-  function compararEste(local, origem, p) {
-    const alvo = document.createElement("div");
-    alvo.style.cssText = "margin-top:8px;font-size:13px;color:var(--suave)";
-    alvo.textContent = "Comparando com os outros mercados...";
-    document.getElementById("resumo-rota").appendChild(alvo);
-
-    fetch("/api/viabilidade?lat=" + origem[0] + "&lon=" + origem[1] +
-          "&consumo=" + p.consumo + "&preco=" + p.preco, { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-      .then(function (d) {
-        const lista = d.resultados || [];
-        const pos = lista.findIndex(function (r) {
-          return r.cnpj === local.cnpj &&
-                 Math.abs(r.latitude - local.latitude) < 1e-5 &&
-                 Math.abs(r.longitude - local.longitude) < 1e-5;
-        });
-        if (pos < 0 || lista.length < 2) {
-          alvo.textContent = "Ainda não há outro mercado com preços para comparar.";
-          return;
-        }
-        const este = lista[pos], melhor = lista[0];
-        alvo.style.color = "var(--tinta)";
-        alvo.innerHTML = pos === 0
-          ? "<strong>Vale a pena:</strong> contando a gasolina, é o mais em conta dos " +
-            lista.length + " mercados (R$ " + reais(este.custo_total) + ")."
-          : "<strong>Não é o melhor:</strong> " + melhor.nome + " sai R$ " +
-            reais(este.custo_total - melhor.custo_total) +
-            " mais barato, já contando a gasolina.";
-        alvo.innerHTML += '<div style="color:var(--suave);margin-top:3px">' + notaItens(d) + "</div>";
-      })
-      .catch(function () { alvo.textContent = "Não consegui comparar com os outros mercados agora."; });
-  }
-
-  // Uma nova tentativa antes de desistir: a rede do celular oscila muito.
-  function buscarRota(url, tentativa) {
-    tentativa = tentativa || 1;
-    return fetch(url, { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    }).then(function (d) {
-      if (d.erro || !d.pontos || !d.pontos.length) throw new Error(d.erro || "sem pontos");
-      return d;
-    }).catch(function (erro) {
-      if (tentativa >= 2) throw erro;
-      return new Promise(function (ok) { setTimeout(ok, 1200); })
-        .then(function () { return buscarRota(url, tentativa + 1); });
-    });
-  }
-
-  function estimarRota(origem, destino, p) {
-    const rad = Math.PI / 180, R = 6371;
-    const dLat = (destino[0] - origem[0]) * rad, dLon = (destino[1] - origem[1]) * rad;
-    const h = Math.sin(dLat / 2) ** 2 +
-              Math.cos(origem[0] * rad) * Math.cos(destino[0] * rad) * Math.sin(dLon / 2) ** 2;
-    const km = Math.round(2 * R * Math.asin(Math.sqrt(h)) * FATOR_DESVIO * 100) / 100;
-    return {
-      distancia_km: km, duracao_min: null, ida_e_volta_km: Math.round(km * 200) / 100,
-      custo_combustivel: (km * 2 / p.consumo) * p.preco,
-      rota_real: false, pontos: [origem, destino],
-    };
+    atalho.style.display = "none";
   }
 
   function fecharCartao() {
     cartao.classList.remove("visivel");
-    legenda.style.display = "flex";
-    limparRota();
+    atalho.style.display = "";
   }
   document.getElementById("fechar-cartao").addEventListener("click", fecharCartao);
   mapa.on("click", fecharCartao);
@@ -498,14 +326,34 @@
     const limites = grupo.getBounds();
     if (limites.isValid()) mapa.fitBounds(limites.pad(0.08), { maxZoom: 15 });
   }
-  requestAnimationFrame(enquadrar);
-  window.addEventListener("load", enquadrar);
+  // "Ver no mapa" da tela de comparação chega com ?foco=lat,lon: abre direto
+  // aquele mercado, em vez de enquadrar todos.
+  function mercadoEmFoco() {
+    const foco = new URLSearchParams(location.search).get("foco");
+    if (!foco) return null;
+    const [lat, lon] = foco.split(",").map(parseFloat);
+    return LOCAIS.find(function (l) {
+      return Math.abs(l.latitude - lat) < 1e-5 && Math.abs(l.longitude - lon) < 1e-5;
+    }) || null;
+  }
+  const emFoco = mercadoEmFoco();
+
+  function posicionarInicio() {
+    if (!emFoco) return enquadrar();
+    mapa.invalidateSize();
+    abrirCartao(emFoco);
+    mapa.setView([emFoco.latitude, emFoco.longitude], 16, { animate: false });
+    // Sobe o ponto para o meio da área livre acima do cartão.
+    mapa.panBy([0, cartao.offsetHeight / 2], { animate: false });
+  }
+  requestAnimationFrame(posicionarInicio);
+  window.addEventListener("load", posicionarInicio);
   window.addEventListener("resize", function () { mapa.invalidateSize(); });
   document.getElementById("btn-enquadrar").addEventListener("click", enquadrar);
 
-  // ---------- "vale a pena ir até lá?" ----------
-  // A posição é usada só no cálculo desta requisição e não é armazenada.
-  let meuPonto = null;
+  // ---------- onde estou ----------
+  // A posição só é usada para desenhar o ponto no mapa; não é enviada.
+  let marcadorEu = null;
 
   document.getElementById("btn-local").addEventListener("click", function () {
     if (!navigator.geolocation) return alert("Seu navegador não oferece localização.");
@@ -514,110 +362,20 @@
 
     navigator.geolocation.getCurrentPosition(
       function (posicao) {
-        meuPonto = [posicao.coords.latitude, posicao.coords.longitude];
-        L.circleMarker(meuPonto, {
+        const ponto = [posicao.coords.latitude, posicao.coords.longitude];
+        if (marcadorEu) mapa.removeLayer(marcadorEu);
+        marcadorEu = L.circleMarker(ponto, {
           radius: 9, color: "#fff", weight: 3, fillColor: "#1C5D7A", fillOpacity: 1
         }).addTo(mapa).bindPopup("Você está aqui");
-        mapa.setView(meuPonto, 14);
-        calcularViabilidade();
+        mapa.setView(ponto, 14);
       },
       function () {
         botao.classList.remove("ativo");
         alert("Não consegui obter sua localização.");
-      }
+      },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
     );
   });
-
-  // Preferências do veículo: as da conta, quando há login; senão, a média
-  // dos carros mais vendidos no Brasil e o preço médio do combustível.
-  function preferencias() {
-    if (PERFIL) return PERFIL;
-    return { consumo: {{ consumo_padrao }}, preco: {{ preco_padrao }},
-             consumo_estimado: true, anonimo: true };
-  }
-
-  function notaVeiculo(p) {
-    if (p.anonimo) {
-      return '<a href="/entrar?proximo=/mapa">Entre</a> para usar o consumo e o ' +
-             "preço do combustível do seu carro.";
-    }
-    return (p.consumo_estimado ? "Consumo pela média nacional · " : "") +
-           '<a href="/perfil">alterar</a>';
-  }
-
-  function calcularViabilidade() {
-    if (!meuPonto) return;
-    const p = preferencias();
-    fecharCartao();
-    legenda.style.display = "none";
-    painel.classList.add("visivel");
-    painel.innerHTML = '<div class="carregando">Calculando a rota até cada mercado...</div>';
-
-    fetch("/api/viabilidade?lat=" + meuPonto[0] + "&lon=" + meuPonto[1] +
-          "&consumo=" + p.consumo + "&preco=" + p.preco)
-      .then(function (r) { return r.json(); })
-      .then(function (dados) { desenhar(dados, p); })
-      .catch(function () {
-        painel.innerHTML = '<div class="carregando">Não consegui calcular agora.</div>';
-      });
-  }
-
-  // Diz sobre quais itens a comparação foi feita: sem isso o usuário não tem
-  // como saber que mercados com cestas diferentes estão sendo medidos igual.
-  function notaItens(dados) {
-    if (!dados.itens_comparados) return "";
-    const lista = (dados.nomes_itens || []).join(", ");
-    return dados.metodo === "comum"
-      ? "Comparando os " + dados.itens_comparados + " itens que todos têm: " + lista
-      : "Poucos itens em comum: comparando " + dados.itens_comparados +
-        " itens, com os que faltam estimados pela média da região";
-  }
-
-  function desenhar(dados, p) {
-    const fechar = '<button class="fechar" onclick="document.getElementById(\'painel-vale\')' +
-                   '.classList.remove(\'visivel\')">&times;</button>';
-
-    if (!dados.resultados || !dados.resultados.length) {
-      painel.innerHTML = fechar + '<div class="carregando">' +
-        (dados.aviso || "Sem mercados com preços para comparar ainda.") + "</div>";
-      return;
-    }
-
-    let html = fechar +
-      '<div class="titulo-painel">Vale a pena ir até lá?</div>' +
-      '<div class="nota">Compra + combustível de ida e volta · ' +
-      String(p.consumo).replace(".", ",") + " km/l · R$ " + reais(p.preco) + "/L · " +
-      notaVeiculo(p) + "<br>" +
-      notaItens(dados) + "</div>";
-
-    dados.resultados.slice(0, 4).forEach(function (r, i) {
-      html +=
-        '<div class="linha-vale">' +
-        '<span class="medalha ' + (i === 0 ? "primeiro" : "") + '">' + (i + 1) + "</span>" +
-        '<div class="corpo"><div class="titulo">' + r.nome + "</div>" +
-        '<div class="detalhe">' + km(r.distancia_km) + " km" +
-        (r.rota_real ? "" : " (estimado)") + " · compra R$ " + reais(r.custo_compra) +
-        " + combustível R$ " + reais(r.custo_combustivel) +
-        (r.itens_estimados ? " · " + r.itens_estimados + " item(ns) pela média da região" : "") +
-        "</div></div>" +
-        '<div class="valor">R$ ' + reais(r.custo_total) + "</div></div>";
-    });
-
-    if (dados.comparacao) {
-      const c = dados.comparacao;
-      html += '<div class="veredito ' + (c.compensa ? "sim" : "nao") + '">' +
-        (c.compensa
-          ? "Compensa ir até " + c.alternativa + ": mesmo gastando R$ " +
-            reais(c.custo_extra_do_trajeto) + " a mais de combustível por " +
-            km(c.km_a_mais) + " km, você economiza <b>R$ " + reais(c.saldo) + "</b>."
-          : "Não compensa: a economia de R$ " + reais(c.economia_na_compra) +
-            " não cobre os R$ " + reais(c.custo_extra_do_trajeto) +
-            " de combustível a mais.") +
-        "</div>";
-    }
-
-    painel.innerHTML = html;
-  }
 </script>
 
 {% endif %}

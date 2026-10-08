@@ -95,7 +95,18 @@
     .leaflet-control-attribution{font-size:9.5px}
     .leaflet-top.leaflet-left{margin-top:150px}
     .leaflet-top.leaflet-right{margin-top:150px}
-    .leaflet-control-zoom a{border-radius:10px !important}
+    /* Zoom e camadas no mesmo estilo: blocos brancos, cantos suaves, sombra
+       leve, sem a borda cinza grossa padrão do Leaflet. */
+    .leaflet-touch .leaflet-bar,.leaflet-touch .leaflet-control-layers{
+      border:none;border-radius:14px;overflow:hidden;
+      box-shadow:0 2px 10px rgba(27,58,42,.22)}
+    .leaflet-control-zoom a,.leaflet-touch .leaflet-control-zoom a{
+      width:42px;height:42px;line-height:42px;font-size:22px;font-weight:400;
+      color:var(--escuro);background:#fff;border-radius:0 !important}
+    .leaflet-control-zoom a:first-child{border-bottom:1px solid var(--linha)}
+    .leaflet-control-zoom a:hover{background:var(--creme)}
+    .leaflet-control-zoom a.leaflet-disabled{color:#B9C2B6;background:#fff}
+    .leaflet-touch .leaflet-control-layers-toggle{width:42px;height:42px}
   </style>
 {% endblock %}
 

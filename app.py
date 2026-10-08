@@ -34,7 +34,8 @@ from tabao.qrcode_nfce import QRCodeInvalidoError, interpretar_url, ler_de_image
 from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimentos,
                         importar_area, locais_dos_estabelecimentos,
                         localizar_estabelecimentos, mesclar)
-from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
+from tabao.rota import (CONSUMO_PADRAO_KM_L, FATOR_DESVIO_URBANO,
+                       PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import BancoError, criar_repositorio
 from tabao.limite import LimitadorDeTaxa
@@ -493,6 +494,12 @@ def inicio():
     # O OSM não conhece todo supermercado brasileiro, então o endereço da nota
     # completa o mapa.
     todos = mesclar(cache.locais, locais_dos_estabelecimentos(repo))
+    # Só aparecem os mercados que já têm preços na base: um ponto sem preço
+    # não ajuda a decidir onde comprar e só polui o mapa.
+    todos = [local for local in todos if local.cnpj]
+    por_tipo: dict[str, int] = {}
+    for local in todos:
+        por_tipo[local.tipo] = por_tipo.get(local.tipo, 0) + 1
 
     # Valores por mercado, para mostrar de forma discreta no mapa e no cartão.
     # cobertura_minima=0.0 para incluir mesmo quem tem poucos itens da cesta.
@@ -513,6 +520,7 @@ def inicio():
         "nome": local.nome,
         "latitude": local.latitude,
         "longitude": local.longitude,
+        "tipo": local.tipo,
         "tipo_legivel": local.tipo_legivel,
         "endereco": local.endereco,
         "cnpj": local.cnpj,
@@ -531,7 +539,8 @@ def inicio():
         "mapa.html",
         cache=cache,
         total_locais=len(todos),
-        com_precos=sum(1 for local in todos if local.cnpj),
+        por_tipo=dict(sorted(por_tipo.items(), key=lambda kv: -kv[1])),
+        fator_desvio=FATOR_DESVIO_URBANO,
         tipos=TIPOS_OSM,
         locais_json=json.dumps(locais, ensure_ascii=False),
         centro_json=json.dumps(centro),

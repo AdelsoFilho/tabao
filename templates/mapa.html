@@ -114,8 +114,7 @@
 
     <div class="chips">
       <button class="chip ativo" data-filtro="todos" type="button">Todos · {{ total_locais }}</button>
-      <button class="chip" data-filtro="precos" type="button">Com preços · {{ com_precos }}</button>
-      {% for tipo, quantidade in cache.por_tipo().items() %}
+      {% for tipo, quantidade in por_tipo.items() if por_tipo|length > 1 %}
         <button class="chip" data-filtro="{{ tipo }}" type="button">
           {{ tipos[tipo] if tipo in tipos else tipo }} · {{ quantidade }}
         </button>
@@ -141,7 +140,6 @@
 
   <div class="legenda" id="legenda">
     <span><i style="background:#2C5F2D"></i>com preços</span>
-    <span><i style="background:#C1440E"></i>sem preços</span>
   </div>
 
   <div class="painel-vale" id="painel-vale"></div>
@@ -158,6 +156,7 @@
 <script>
   const LOCAIS = {{ locais_json|safe }};
   const CENTRO = {{ centro_json|safe }};
+  const FATOR_DESVIO = {{ fator_desvio }};
 
   const mapa = L.map("mapa", { zoomControl: true, scrollWheelZoom: true })
                 .setView(CENTRO, 13);
@@ -319,7 +318,9 @@
           }).addTo(mapa).bindPopup("Você está aqui");
           resolve(meuPonto);
         },
-        reject
+        reject,
+        // Sem prazo, um GPS sem sinal deixa "Calculando a rota..." para sempre.
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
       );
     });
   }
@@ -334,12 +335,11 @@
                   "&para_lat=" + local.latitude + "&para_lon=" + local.longitude +
                   "&consumo=" + p.consumo + "&preco=" + p.preco;
 
-      fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.erro || !d.pontos || !d.pontos.length) {
-          resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
-                             "Não consegui traçar a rota agora.</div>";
-          return;
-        }
+      buscarRota(url).catch(function () {
+        // Servidor inalcançável (sinal fraco, por exemplo): estima aqui mesmo,
+        // em linha reta com o mesmo fator de desvio urbano do servidor.
+        return estimarRota(origem, [local.latitude, local.longitude], p);
+      }).then(function (d) {
 
         limparRota();
         camadaRota = L.polyline(d.pontos, {
@@ -356,14 +356,43 @@
           '<div style="color:var(--suave);font-size:12.5px;margin-top:3px">' +
           "Ida e volta: " + d.ida_e_volta_km + " km · R$ " +
           d.custo_combustivel.toFixed(2) + " de combustível</div></div>";
-      }).catch(function () {
-        resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
-                           "Não consegui traçar a rota agora.</div>";
       });
-    }).catch(function () {
+    }).catch(function (erro) {
+      const negado = erro && erro.code === 1;
       resumo.innerHTML = '<div style="color:var(--acento);font-size:13px">' +
-                         "Preciso da sua localização para traçar a rota.</div>";
+        (negado ? "Autorize a localização no navegador para traçar a rota."
+                : "Não consegui obter sua localização. Tente de novo em um lugar aberto.") +
+        "</div>";
     });
+  }
+
+  // Uma nova tentativa antes de desistir: a rede do celular oscila muito.
+  function buscarRota(url, tentativa) {
+    tentativa = tentativa || 1;
+    return fetch(url, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (d) {
+      if (d.erro || !d.pontos || !d.pontos.length) throw new Error(d.erro || "sem pontos");
+      return d;
+    }).catch(function (erro) {
+      if (tentativa >= 2) throw erro;
+      return new Promise(function (ok) { setTimeout(ok, 1200); })
+        .then(function () { return buscarRota(url, tentativa + 1); });
+    });
+  }
+
+  function estimarRota(origem, destino, p) {
+    const rad = Math.PI / 180, R = 6371;
+    const dLat = (destino[0] - origem[0]) * rad, dLon = (destino[1] - origem[1]) * rad;
+    const h = Math.sin(dLat / 2) ** 2 +
+              Math.cos(origem[0] * rad) * Math.cos(destino[0] * rad) * Math.sin(dLon / 2) ** 2;
+    const km = Math.round(2 * R * Math.asin(Math.sqrt(h)) * FATOR_DESVIO * 100) / 100;
+    return {
+      distancia_km: km, duracao_min: null, ida_e_volta_km: Math.round(km * 200) / 100,
+      custo_combustivel: (km * 2 / p.consumo) * p.preco,
+      rota_real: false, pontos: [origem, destino],
+    };
   }
 
   function fecharCartao() {
@@ -382,8 +411,7 @@
       const filtro = chip.dataset.filtro;
 
       marcadores.forEach(function (m) {
-        const mostrar = filtro === "todos" ||
-          (filtro === "precos" && m.local.cnpj) || m.local.tipo === filtro;
+        const mostrar = filtro === "todos" || m.local.tipo === filtro;
         if (mostrar) grupo.addLayer(m.marcador); else grupo.removeLayer(m.marcador);
       });
       enquadrar();

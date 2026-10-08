@@ -110,7 +110,7 @@ def trajeto_em_linha_reta(origem: tuple[float, float],
 
 
 def trajeto_por_ruas(origem: tuple[float, float], destino: tuple[float, float],
-                     tempo_limite: int = 20, com_desenho: bool = False) -> Trajeto:
+                     tempo_limite: int = 8, com_desenho: bool = False) -> Trajeto:
     """
     Calcula a rota real de carro pelo OSRM.
 

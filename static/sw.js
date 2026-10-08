@@ -11,7 +11,7 @@
  * dado que envelhece: a rede sempre tem prioridade quando está disponível.
  */
 
-const VERSAO = "tabao-v3";
+const VERSAO = "tabao-v4";
 const CACHE_ESTATICO = `${VERSAO}-estatico`;
 const CACHE_PAGINAS = `${VERSAO}-paginas`;
 
@@ -64,6 +64,11 @@ self.addEventListener("fetch", (evento) => {
 
   const url = new URL(requisicao.url);
   if (url.origin !== self.location.origin) return;   // tiles do mapa, etc.
+
+  // APIs ficam de fora: a resposta leva a posição do usuário (que não deve
+  // ser guardada no aparelho) e, sem rede, devolver a página /offline no lugar
+  // de JSON fazia o mapa dizer "Não consegui traçar a rota".
+  if (url.pathname.startsWith("/api/")) return;
 
   if (ehEstatico(url)) {
     evento.respondWith(

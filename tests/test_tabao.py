@@ -1172,3 +1172,23 @@ def test_cache_expira(postgres_falso, monkeypatch):
     monkeypatch.setattr(banco, "CACHE_SEGUNDOS", 0)
     repo.precos
     assert len(conexao.consultas) == 2
+
+
+def test_mapa_mostra_so_mercados_com_precos(cliente_web, monkeypatch, cupom_real):
+    import json as _json
+    import re
+
+    repo = Repositorio(cliente_web.BASE)
+    repo.registrar_cupom(cupom_real)
+    mercado = repo.registro_estabelecimentos[cupom_real.estabelecimento.cnpj]
+    mercado.latitude, mercado.longitude = -16.65, -49.25
+    repo.atualizar_estabelecimento(mercado)
+    repo.salvar()
+
+    html = cliente_web.app.test_client().get("/mapa").get_data(as_text=True)
+    linha = next(l for l in html.splitlines() if "const LOCAIS = " in l)
+    locais = _json.loads(linha.split("const LOCAIS = ", 1)[1].rstrip().rstrip(";"))
+    assert locais, "o mercado do cupom deveria aparecer"
+    assert all(local["cnpj"] for local in locais)
+    assert all("tipo" in local for local in locais)
+    assert "#C1440E\"></i>sem preços" not in html

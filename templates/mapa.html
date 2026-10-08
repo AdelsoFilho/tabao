@@ -157,6 +157,7 @@
   const LOCAIS = {{ locais_json|safe }};
   const CENTRO = {{ centro_json|safe }};
   const FATOR_DESVIO = {{ fator_desvio }};
+  const PERFIL = {{ perfil_json|safe }};
 
   const mapa = L.map("mapa", { zoomControl: true, scrollWheelZoom: true })
                 .setView(CENTRO, 13);
@@ -487,14 +488,21 @@
     );
   });
 
-  // Preferências do veículo, guardadas apenas neste aparelho.
+  // Preferências do veículo: as da conta, quando há login; senão, a média
+  // dos carros mais vendidos no Brasil e o preço médio do combustível.
   function preferencias() {
-    let consumo = 10, preco = 6.0;
-    try {
-      consumo = parseFloat(localStorage.getItem("tabao-consumo")) || consumo;
-      preco = parseFloat(localStorage.getItem("tabao-preco-combustivel")) || preco;
-    } catch (e) {}
-    return { consumo: consumo, preco: preco };
+    if (PERFIL) return PERFIL;
+    return { consumo: {{ consumo_padrao }}, preco: {{ preco_padrao }},
+             consumo_estimado: true, anonimo: true };
+  }
+
+  function notaVeiculo(p) {
+    if (p.anonimo) {
+      return '<a href="/entrar?proximo=/mapa">Entre</a> para usar o consumo e o ' +
+             "preço do combustível do seu carro.";
+    }
+    return (p.consumo_estimado ? "Consumo pela média nacional · " : "") +
+           '<a href="/perfil">alterar</a>';
   }
 
   function calcularViabilidade() {
@@ -538,7 +546,8 @@
     let html = fechar +
       '<div class="titulo-painel">Vale a pena ir até lá?</div>' +
       '<div class="nota">Compra + combustível de ida e volta · ' +
-      p.consumo + " km/l · R$ " + p.preco.toFixed(2) + "/L<br>" +
+      String(p.consumo).replace(".", ",") + " km/l · R$ " + reais(p.preco) + "/L · " +
+      notaVeiculo(p) + "<br>" +
       notaItens(dados) + "</div>";
 
     dados.resultados.slice(0, 4).forEach(function (r, i) {

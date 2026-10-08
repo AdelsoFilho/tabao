@@ -13,11 +13,11 @@ import logging
 import os
 import secrets
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from flask import (Flask, flash, g, jsonify, redirect, render_template, request,
-                   send_from_directory, url_for)
+from flask import (Flask, abort, flash, g, jsonify, redirect, render_template, request,
+                   send_from_directory, session, url_for)
 
 # Permite rodar "python tabao/app.py" a partir do diretório acima.
 import sys
@@ -38,6 +38,9 @@ from tabao.rota import (CONSUMO_PADRAO_KM_L, FATOR_DESVIO_URBANO,
                        PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import BancoError, criar_repositorio
+from tabao.contas import (COMBUSTIVEIS, CONSUMO_MEDIO_KM_L, SENHA_MINIMA, ContaError,
+                          Usuario, gerar_hash, ler_veiculo, normalizar_email,
+                          senha_confere, validar_cadastro)
 from tabao.limite import LimitadorDeTaxa
 from tabao.validacao import CupomInvalidoError, validar_cupom
 from tabao.repositorio import Repositorio, matriz_precos
@@ -75,6 +78,9 @@ _ligar_monitoramento()
 # Cada envio vira duas consultas à SEFAZ: limitar protege o IP do servidor.
 LIMITE_ENVIOS = LimitadorDeTaxa(limite=10, janela=60)
 LIMITE_CONFIRMACOES = LimitadorDeTaxa(limite=10, janela=60)
+# Tentativas de senha: barra quem tenta adivinhar a senha de alguém.
+LIMITE_LOGIN = LimitadorDeTaxa(limite=8, janela=300)
+LIMITE_CADASTRO = LimitadorDeTaxa(limite=5, janela=3600)
 
 
 def _origem() -> str:
@@ -134,6 +140,15 @@ def _chave_secreta() -> str:
 
 app.secret_key = _chave_secreta()
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB por foto
+
+# Sessão de login: cookie assinado, inacessível ao JavaScript, que não viaja
+# em requisições de outros sites e, publicado, só por HTTPS.
+app.config.update(
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=any(os.environ.get(n) for n in MARCAS_DE_HOSPEDAGEM),
+)
 
 # DADOS_DIR permite apontar para um disco persistente na hospedagem.
 # Sem ele, usa a pasta ao lado do código.
@@ -198,6 +213,159 @@ def repositorio():
     if "repo" not in g:
         g.repo = criar_repositorio(BASE)
     return g.repo
+
+
+# --------------------------------------------------------------------------
+# Contas de usuário
+# --------------------------------------------------------------------------
+
+def usuario_atual():
+    """O usuário logado nesta requisição, ou None."""
+    if "usuario" not in g:
+        id_ = session.get("usuario_id")
+        g.usuario = repositorio().usuario_por_id(id_) if id_ else None
+        if id_ and g.usuario is None:
+            session.pop("usuario_id", None)   # conta que não existe mais
+    return g.usuario
+
+
+def _token_csrf() -> str:
+    """Token por sessão que prova que o formulário saiu do próprio TáBão."""
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_urlsafe(32)
+    return session["csrf"]
+
+
+def _conferir_csrf() -> None:
+    enviado = request.form.get("csrf", "")
+    if not enviado or not secrets.compare_digest(enviado, session.get("csrf", "")):
+        abort(400)
+
+
+def _destino_seguro(destino: str) -> str:
+    """Só volta para páginas do próprio site (evita redirecionar para golpes)."""
+    if destino and destino.startswith("/") and not destino.startswith("//"):
+        return destino
+    return url_for("inicio")
+
+
+@app.context_processor
+def contexto_conta():
+    try:
+        usuario = usuario_atual()
+    except BancoError:
+        # A página de erro do próprio banco não pode depender do banco.
+        usuario = None
+    return {"usuario": usuario, "csrf_token": _token_csrf}
+
+
+@app.route("/cadastro", methods=["GET", "POST"])
+def cadastro():
+    if usuario_atual():
+        return redirect(url_for("perfil"))
+    if request.method == "GET":
+        return render_template("cadastro.html", senha_minima=SENHA_MINIMA, dados={})
+
+    _conferir_csrf()
+    if not LIMITE_CADASTRO.permitir(_origem()):
+        return _muitos_pedidos()
+
+    dados = request.form
+    email = normalizar_email(dados.get("email"))
+    try:
+        validar_cadastro(email, dados.get("nome", ""), dados.get("senha", ""),
+                         dados.get("confirmacao", ""))
+        usuario = Usuario(
+            id=secrets.token_hex(16), email=email, nome=dados["nome"].strip(),
+            senha_hash=gerar_hash(dados["senha"]),
+        )
+        repositorio().criar_usuario(usuario)
+    except ContaError as erro:
+        flash(str(erro), "erro")
+        return render_template("cadastro.html", senha_minima=SENHA_MINIMA,
+                               dados={"email": email, "nome": dados.get("nome", "")}), 400
+
+    _entrar(usuario)
+    flash("Conta criada! Conte sobre o seu carro para o cálculo do combustível.", "sucesso")
+    return redirect(url_for("perfil"))
+
+
+def _entrar(usuario: Usuario) -> None:
+    # Sessão nova a cada login: um cookie plantado antes não vira sessão logada.
+    session.clear()
+    session.permanent = True
+    session["usuario_id"] = usuario.id
+    g.usuario = usuario
+
+
+@app.route("/entrar", methods=["GET", "POST"])
+def entrar():
+    proximo = _destino_seguro(request.values.get("proximo", ""))
+    if usuario_atual():
+        return redirect(proximo)
+    if request.method == "GET":
+        return render_template("entrar.html", proximo=proximo, email="")
+
+    _conferir_csrf()
+    email = normalizar_email(request.form.get("email"))
+    if not LIMITE_LOGIN.permitir(_origem()):
+        return _muitos_pedidos()
+
+    usuario = repositorio().usuario_por_email(email)
+    if not senha_confere(usuario, request.form.get("senha", "")):
+        # Mesma mensagem para e-mail inexistente e senha errada: não revela
+        # quem tem conta.
+        flash("E-mail ou senha incorretos.", "erro")
+        return render_template("entrar.html", proximo=proximo, email=email), 401
+
+    _entrar(usuario)
+    flash(f"Olá, {usuario.nome.split()[0]}!", "sucesso")
+    return redirect(proximo)
+
+
+@app.route("/sair", methods=["POST"])
+def sair():
+    _conferir_csrf()
+    session.clear()
+    flash("Você saiu da sua conta.", "aviso")
+    return redirect(url_for("inicio"))
+
+
+@app.route("/perfil", methods=["GET", "POST"])
+def perfil():
+    usuario = usuario_atual()
+    if usuario is None:
+        return redirect(url_for("entrar", proximo=url_for("perfil")))
+
+    if request.method == "POST":
+        _conferir_csrf()
+        try:
+            veiculo = ler_veiculo(
+                request.form.get("combustivel", ""),
+                request.form.get("preco_combustivel", ""),
+                request.form.get("consumo_km_l", ""),
+                nao_sei=bool(request.form.get("nao_sei")),
+            )
+        except ContaError as erro:
+            flash(str(erro), "erro")
+            return redirect(url_for("perfil"))
+
+        nome = (request.form.get("nome") or "").strip()
+        if nome:
+            usuario.nome = nome
+        usuario.combustivel = veiculo["combustivel"]
+        usuario.preco_combustivel = veiculo["preco_combustivel"]
+        usuario.consumo_km_l = veiculo["consumo_km_l"]
+        repositorio().atualizar_usuario(usuario)
+        flash("Dados do veículo salvos.", "sucesso")
+        return redirect(url_for("perfil"))
+
+    return render_template(
+        "perfil.html",
+        combustiveis=COMBUSTIVEIS,
+        medias=CONSUMO_MEDIO_KM_L,
+        preco_padrao=PRECO_COMBUSTIVEL_PADRAO,
+    )
 
 
 @app.teardown_appcontext
@@ -541,6 +709,11 @@ def inicio():
         total_locais=len(todos),
         por_tipo=dict(sorted(por_tipo.items(), key=lambda kv: -kv[1])),
         fator_desvio=FATOR_DESVIO_URBANO,
+        consumo_padrao=CONSUMO_PADRAO_KM_L,
+        preco_padrao=PRECO_COMBUSTIVEL_PADRAO,
+        perfil_json=json.dumps(
+            usuario_atual().preferencias(PRECO_COMBUSTIVEL_PADRAO) if usuario_atual() else None
+        ),
         tipos=TIPOS_OSM,
         locais_json=json.dumps(locais, ensure_ascii=False),
         centro_json=json.dumps(centro),

@@ -37,7 +37,8 @@ RAIO_TERRA_M = 6371000.0
 FATOR_DESVIO_URBANO = 1.35
 
 # Valores padrão quando o usuário ainda não informou os do carro dele.
-CONSUMO_PADRAO_KM_L = 10.0
+# Média dos carros mais vendidos no Brasil, a gasolina (ver contas.py).
+CONSUMO_PADRAO_KM_L = 11.5
 PRECO_COMBUSTIVEL_PADRAO = 6.00
 
 

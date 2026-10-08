@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Iterator, Optional
 
 from .categorias import categorizar
+from .contas import ContaError, Usuario
 from .modelos import Cupom, Estabelecimento, PrecoObservado
 from .produtos import classificar, normalizar, preco_por_unidade_padrao
 
@@ -61,6 +62,17 @@ create index if not exists precos_item_cesta_idx on precos (item_cesta);
 create index if not exists precos_cnpj_idx       on precos (cnpj);
 create index if not exists precos_categoria_idx  on precos (categoria);
 create index if not exists precos_observado_idx  on precos (observado_em desc);
+
+create table if not exists usuarios (
+    id                text primary key,
+    email             text not null unique,
+    nome              text not null,
+    senha_hash        text not null,
+    combustivel       text not null default 'gasolina',
+    preco_combustivel numeric(6,3),
+    consumo_km_l      numeric(5,2),
+    criado_em         timestamptz not null default now()
+);
 """
 
 
@@ -137,7 +149,69 @@ def _em_cache(nome: str, carregar):
     return valor
 
 
-class RepositorioPostgres:
+class _UsuariosPostgres:
+    """Contas de usuário no Postgres. Base do RepositorioPostgres."""
+
+    _SELECAO_USUARIO = """
+        select id, email, nome, senha_hash, combustivel, preco_combustivel,
+               consumo_km_l, criado_em
+        from usuarios
+    """
+
+    def _usuario_da_linha(self, linha) -> Optional[Usuario]:
+        if linha is None:
+            return None
+        return Usuario(
+            id=linha[0], email=linha[1], nome=linha[2], senha_hash=linha[3],
+            combustivel=linha[4],
+            preco_combustivel=float(linha[5]) if linha[5] is not None else None,
+            consumo_km_l=float(linha[6]) if linha[6] is not None else None,
+            criado_em=linha[7],
+        )
+
+    def usuario_por_email(self, email: str) -> Optional[Usuario]:
+        with self._conexao.cursor() as cursor:
+            cursor.execute(self._SELECAO_USUARIO + " where email = %s", (email,))
+            return self._usuario_da_linha(cursor.fetchone())
+
+    def usuario_por_id(self, id_: str) -> Optional[Usuario]:
+        with self._conexao.cursor() as cursor:
+            cursor.execute(self._SELECAO_USUARIO + " where id = %s", (id_,))
+            return self._usuario_da_linha(cursor.fetchone())
+
+    def criar_usuario(self, usuario: Usuario) -> None:
+        try:
+            with self._conexao.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into usuarios (id, email, nome, senha_hash, combustivel,
+                                          preco_combustivel, consumo_km_l, criado_em)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (usuario.id, usuario.email, usuario.nome, usuario.senha_hash,
+                     usuario.combustivel, usuario.preco_combustivel,
+                     usuario.consumo_km_l, usuario.criado_em),
+                )
+        except Exception as erro:
+            if getattr(erro, "sqlstate", None) == "23505":
+                raise ContaError("Já existe uma conta com este e-mail.") from erro
+            raise
+
+    def atualizar_usuario(self, usuario: Usuario) -> None:
+        with self._conexao.cursor() as cursor:
+            cursor.execute(
+                """
+                update usuarios
+                   set nome = %s, combustivel = %s, preco_combustivel = %s,
+                       consumo_km_l = %s
+                 where id = %s
+                """,
+                (usuario.nome, usuario.combustivel, usuario.preco_combustivel,
+                 usuario.consumo_km_l, usuario.id),
+            )
+
+
+class RepositorioPostgres(_UsuariosPostgres):
     """Mesma interface de `Repositorio`, com Postgres por trás."""
 
     def __init__(self, url: Optional[str] = None) -> None:

@@ -41,3 +41,14 @@ create index if not exists precos_item_cesta_idx on precos (item_cesta);
 create index if not exists precos_cnpj_idx       on precos (cnpj);
 create index if not exists precos_categoria_idx  on precos (categoria);
 create index if not exists precos_observado_idx  on precos (observado_em desc);
+
+create table if not exists usuarios (
+    id                text primary key,
+    email             text not null unique,
+    nome              text not null,
+    senha_hash        text not null,
+    combustivel       text not null default 'gasolina',
+    preco_combustivel numeric(6,3),
+    consumo_km_l      numeric(5,2),
+    criado_em         timestamptz not null default now()
+);

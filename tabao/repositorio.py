@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
+from .contas import ContaError, Usuario
 from .modelos import Cupom, Estabelecimento, PrecoObservado
 from .categorias import categorizar, nome_da_categoria
 from .produtos import classificar, nome_do_item, preco_por_unidade_padrao
@@ -101,6 +102,7 @@ class Repositorio:
         self._chaves_processadas: set[str] = set()
         # Registro dos mercados: nome, endereço e coordenadas, por CNPJ.
         self._estabelecimentos: dict[str, Estabelecimento] = {}
+        self._usuarios: dict[str, Usuario] = {}
         self.carregar()
 
     # ---- persistência ----
@@ -125,6 +127,9 @@ class Repositorio:
             cnpj: Estabelecimento(**registro)
             for cnpj, registro in dados.get("estabelecimentos", {}).items()
         }
+        self._usuarios = {
+            u["id"]: Usuario.de_dicionario(u) for u in dados.get("usuarios", [])
+        }
 
     def salvar(self) -> None:
         """Grava a base no disco, criando o diretório se necessário."""
@@ -135,6 +140,7 @@ class Repositorio:
             "estabelecimentos": {
                 cnpj: asdict(e) for cnpj, e in self._estabelecimentos.items()
             },
+            "usuarios": [u.para_dicionario() for u in self._usuarios.values()],
         }
         # Grava num temporário e troca de uma vez: se o processo cair no meio,
         # o arquivo antigo continua inteiro em vez de ficar pela metade.
@@ -152,6 +158,24 @@ class Repositorio:
             print(f"AVISO: base ilegível movida para {destino}", file=sys.stderr)
         except OSError:
             pass
+
+    # ---- contas de usuário ----
+
+    def usuario_por_email(self, email: str) -> Optional[Usuario]:
+        return next((u for u in self._usuarios.values() if u.email == email), None)
+
+    def usuario_por_id(self, id_: str) -> Optional[Usuario]:
+        return self._usuarios.get(id_)
+
+    def criar_usuario(self, usuario: Usuario) -> None:
+        if self.usuario_por_email(usuario.email):
+            raise ContaError("Já existe uma conta com este e-mail.")
+        self._usuarios[usuario.id] = usuario
+        self.salvar()
+
+    def atualizar_usuario(self, usuario: Usuario) -> None:
+        self._usuarios[usuario.id] = usuario
+        self.salvar()
 
     # ---- escrita ----
 

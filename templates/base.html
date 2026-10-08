@@ -37,6 +37,22 @@
   .local{margin-left:auto;display:flex;align-items:center;gap:5px;color:#D7E2D2;
          font-size:13px;background:rgba(255,255,255,.12);padding:7px 13px;border-radius:99px}
   .local svg{width:14px;height:14px}
+  .conta{display:flex;align-items:center;gap:5px;color:#fff;font-size:13px;font-weight:600;
+         background:rgba(255,255,255,.12);padding:7px 12px;border-radius:99px;max-width:40vw}
+  .conta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conta svg{width:15px;height:15px;flex:none}
+
+  /* ---------- formulários de conta ---------- */
+  .form-conta label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+  .form-conta input[type=text],.form-conta input[type=email],.form-conta input[type=password],
+  .form-conta select{width:100%;padding:12px 14px;border:1px solid var(--linha);border-radius:12px;
+         font:inherit;background:var(--branco);color:var(--tinta)}
+  .form-conta input:focus,.form-conta select:focus{outline:2px solid var(--musgo);border-color:transparent}
+  .form-conta .dica{color:var(--suave);font-size:13px;margin-top:5px}
+  .form-conta .marcar{display:flex;align-items:center;gap:9px;font-weight:500;margin-top:10px}
+  .form-conta .marcar input{width:18px;height:18px;accent-color:var(--verde)}
+  .form-conta .botao.grande{margin-top:20px}
+  .rodape-conta{text-align:center;margin-top:16px;font-size:14px;color:var(--suave)}
 
   /* ---------- conteúdo ---------- */
   .conteudo{padding:16px 16px calc(var(--barra) + 26px + env(safe-area-inset-bottom));
@@ -189,6 +205,13 @@
     </svg>
     {{ area_atual or "sua região" }}
   </span>
+  <a class="conta" href="{{ url_for('perfil') if usuario else url_for('entrar') }}"
+     aria-label="{{ 'Minha conta' if usuario else 'Entrar' }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
+    </svg>
+    <span>{{ usuario.nome.split()[0] if usuario else "Entrar" }}</span>
+  </a>
 </header>
 
 <div class="conteudo {% block classe_conteudo %}{% endblock %}">

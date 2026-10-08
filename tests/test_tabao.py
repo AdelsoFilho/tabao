@@ -1250,3 +1250,122 @@ def test_rotas_da_viabilidade_sao_calculadas_em_paralelo(monkeypatch):
     resultado = rota.avaliar((-16.6, -49.2), candidatos)
     assert len(resultado) == 4
     assert pico[0] > 1
+
+
+# --------------------------------------------------------------------------
+# Contas de usuário
+# --------------------------------------------------------------------------
+
+from tabao.contas import CONSUMO_MEDIO_KM_L, ContaError, ler_veiculo
+
+
+def _csrf(cliente, caminho):
+    import re
+    html = cliente.get(caminho).get_data(as_text=True)
+    return re.search(r'name="csrf" value="([^"]+)"', html).group(1)
+
+
+@pytest.fixture
+def web_contas(cliente_web):
+    for limite in (cliente_web.LIMITE_LOGIN, cliente_web.LIMITE_CADASTRO):
+        limite.limpar()
+    return cliente_web
+
+
+def _cadastrar(cliente, email="ana@exemplo.com", senha="senha-forte-1"):
+    return cliente.post("/cadastro", data={
+        "csrf": _csrf(cliente, "/cadastro"), "nome": "Ana Souza", "email": email,
+        "senha": senha, "confirmacao": senha,
+    })
+
+
+def test_cadastro_login_e_sair(web_contas):
+    cliente = web_contas.app.test_client()
+    resposta = _cadastrar(cliente)
+    assert resposta.status_code == 302 and resposta.location.endswith("/perfil")
+    assert "Ana" in cliente.get("/perfil").get_data(as_text=True)
+
+    cliente.post("/sair", data={"csrf": _csrf(cliente, "/perfil")})
+    assert cliente.get("/perfil").status_code == 302
+
+    errada = cliente.post("/entrar", data={
+        "csrf": _csrf(cliente, "/entrar"), "email": "ana@exemplo.com", "senha": "outra-senha"})
+    assert errada.status_code == 401
+
+    certa = cliente.post("/entrar", data={
+        "csrf": _csrf(cliente, "/entrar"), "email": "ANA@exemplo.com ", "senha": "senha-forte-1"})
+    assert certa.status_code == 302
+    assert cliente.get("/perfil").status_code == 200
+
+
+def test_senha_nao_e_guardada_em_texto(web_contas):
+    _cadastrar(web_contas.app.test_client())
+    conteudo = Path(web_contas.BASE).read_text(encoding="utf-8")
+    assert "senha-forte-1" not in conteudo
+    assert "ana@exemplo.com" in conteudo
+
+
+def test_email_repetido_e_recusado(web_contas):
+    _cadastrar(web_contas.app.test_client())
+    resposta = _cadastrar(web_contas.app.test_client())
+    assert resposta.status_code == 400
+    assert "Já existe" in resposta.get_data(as_text=True)
+
+
+def test_senha_curta_e_recusada(web_contas):
+    resposta = _cadastrar(web_contas.app.test_client(), senha="curta")
+    assert resposta.status_code == 400
+
+
+def test_formulario_sem_csrf_e_recusado(web_contas):
+    resposta = web_contas.app.test_client().post("/entrar", data={
+        "email": "ana@exemplo.com", "senha": "senha-forte-1"})
+    assert resposta.status_code == 400
+
+
+def test_login_nao_redireciona_para_outro_site(web_contas):
+    cliente = web_contas.app.test_client()
+    _cadastrar(cliente)
+    cliente.post("/sair", data={"csrf": _csrf(cliente, "/perfil")})
+    resposta = cliente.post("/entrar", data={
+        "csrf": _csrf(cliente, "/entrar"), "email": "ana@exemplo.com",
+        "senha": "senha-forte-1", "proximo": "//golpe.com/x"})
+    assert "golpe.com" not in resposta.location
+    assert resposta.location.endswith("/mapa")
+
+
+def test_rajada_de_senhas_e_barrada(web_contas):
+    cliente = web_contas.app.test_client()
+    token = _csrf(cliente, "/entrar")
+    codigos = [cliente.post("/entrar", data={"csrf": token, "email": "x@y.com",
+                                             "senha": "errada-123"}).status_code
+               for _ in range(9)]
+    assert codigos[-1] == 429
+
+
+def test_perfil_salva_veiculo_e_nao_sei_usa_media(web_contas):
+    cliente = web_contas.app.test_client()
+    _cadastrar(cliente)
+    cliente.post("/perfil", data={
+        "csrf": _csrf(cliente, "/perfil"), "nome": "Ana", "combustivel": "etanol",
+        "preco_combustivel": "4,59", "consumo_km_l": "", "nao_sei": "1"})
+
+    usuario = Repositorio(web_contas.BASE).usuario_por_email("ana@exemplo.com")
+    assert usuario.preco_combustivel == 4.59
+    assert usuario.consumo_km_l is None
+    assert usuario.consumo_efetivo == CONSUMO_MEDIO_KM_L["etanol"]
+
+    assert usuario.preferencias(6.0) == {
+        "consumo": CONSUMO_MEDIO_KM_L["etanol"], "preco": 4.59,
+        "consumo_estimado": True, "combustivel": "etanol"}
+
+
+def test_ler_veiculo_valida_numeros():
+    assert ler_veiculo("gasolina", "6,49", "12,5", False) == {
+        "combustivel": "gasolina", "preco_combustivel": 6.49, "consumo_km_l": 12.5}
+    with pytest.raises(ContaError):
+        ler_veiculo("gasolina", "abc", "", True)
+    with pytest.raises(ContaError):
+        ler_veiculo("gasolina", "6", "300", False)
+    with pytest.raises(ContaError):
+        ler_veiculo("diesel-de-foguete", "6", "", True)

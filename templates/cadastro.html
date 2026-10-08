@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Criar conta — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>Criar conta</h1>
+<p class="sub">Grátis. Só pedimos o e-mail, para você entrar de qualquer aparelho.</p>
+
+<form class="cartao form-conta" method="post" action="{{ url_for('cadastro') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+  <label for="nome">Nome</label>
+  <input type="text" id="nome" name="nome" value="{{ dados.nome or '' }}" required autocomplete="given-name">
+
+  <label for="email">E-mail</label>
+  <input type="email" id="email" name="email" value="{{ dados.email or '' }}" required autocomplete="email">
+
+  <label for="senha">Senha</label>
+  <input type="password" id="senha" name="senha" required minlength="{{ senha_minima }}"
+         autocomplete="new-password">
+  <div class="dica">Pelo menos {{ senha_minima }} caracteres.</div>
+
+  <label for="confirmacao">Confirme a senha</label>
+  <input type="password" id="confirmacao" name="confirmacao" required minlength="{{ senha_minima }}"
+         autocomplete="new-password">
+
+  <button class="botao grande" type="submit">Criar conta</button>
+</form>
+
+<p class="rodape-conta">Já tem conta? <a href="{{ url_for('entrar') }}">Entrar</a></p>
+
+{% endblock %}

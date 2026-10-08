@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block titulo %}Minha conta — TáBão{% endblock %}
+{% block conteudo %}
+
+<h1>Olá, {{ usuario.nome.split()[0] }}</h1>
+<p class="sub">{{ usuario.email }}</p>
+
+<form class="cartao form-conta" method="post" action="{{ url_for('perfil') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+  <strong>Seu carro</strong>
+  <div class="dica">Usado no "Vale a pena ir?" para somar o combustível de ida e volta.</div>
+
+  <label for="nome">Nome</label>
+  <input type="text" id="nome" name="nome" value="{{ usuario.nome }}" autocomplete="given-name">
+
+  <label for="combustivel">Combustível que você usa</label>
+  <select id="combustivel" name="combustivel">
+    {% for chave, nome in combustiveis.items() %}
+      <option value="{{ chave }}" {{ 'selected' if usuario.combustivel == chave }}>{{ nome }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="preco">Quanto pagou por litro no último abastecimento</label>
+  <input type="text" id="preco" name="preco_combustivel" inputmode="decimal"
+         placeholder="Ex.: {{ '%.2f'|format(preco_padrao) | replace('.', ',') }}"
+         value="{{ ('%.2f'|format(usuario.preco_combustivel)) | replace('.', ',') if usuario.preco_combustivel else '' }}">
+  <div class="dica">Em branco, usamos R$ {{ '%.2f'|format(preco_padrao) | replace('.', ',') }}/L.</div>
+
+  <label for="consumo">Consumo do carro na cidade (km por litro)</label>
+  <input type="text" id="consumo" name="consumo_km_l" inputmode="decimal" placeholder="Ex.: 12,5"
+         value="{{ ('%g'|format(usuario.consumo_km_l)) | replace('.', ',') if usuario.consumo_km_l else '' }}"
+         {{ 'disabled' if usuario.consumo_estimado }}>
+  <label class="marcar">
+    <input type="checkbox" id="nao-sei" name="nao_sei" value="1" {{ 'checked' if usuario.consumo_estimado }}>
+    Não sei o consumo do meu carro
+  </label>
+  <div class="dica" id="dica-media"></div>
+
+  <button class="botao grande" type="submit">Salvar</button>
+</form>
+
+<form method="post" action="{{ url_for('sair') }}" class="rodape-conta">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button class="botao secundario" type="submit">Sair da conta</button>
+</form>
+
+<script>
+(function () {
+  "use strict";
+  var MEDIAS = {{ medias|tojson }};
+  var naoSei = document.getElementById("nao-sei");
+  var consumo = document.getElementById("consumo");
+  var combustivel = document.getElementById("combustivel");
+  var dica = document.getElementById("dica-media");
+
+  function atualizar() {
+    consumo.disabled = naoSei.checked;
+    var media = String(MEDIAS[combustivel.value]).replace(".", ",");
+    dica.textContent = naoSei.checked
+      ? "Vamos usar " + media + " km/l, a média dos carros mais vendidos no Brasil com " +
+        combustivel.options[combustivel.selectedIndex].text.toLowerCase() + "."
+      : "";
+  }
+  naoSei.addEventListener("change", atualizar);
+  combustivel.addEventListener("change", atualizar);
+  atualizar();
+})();
+</script>
+
+{% endblock %}

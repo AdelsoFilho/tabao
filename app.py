@@ -579,6 +579,9 @@ def enviar():
         return _muitos_pedidos()
 
     url_qrcode = (request.form.get("url") or "").strip()
+    # Modo caixa: grava sem a tela de conferência e volta para a câmera.
+    direto = request.form.get("direto") == "1"
+    volta = url_for("enviar", continuar=1) if direto else url_for("enviar")
     # Dois inputs (câmera e galeria) compartilham name="foto"; pega o preenchido.
     foto = next((f for f in request.files.getlist("foto") if f and f.filename), None)
 
@@ -612,26 +615,37 @@ def enviar():
         qr = interpretar_url(url_qrcode)
     except QRCodeInvalidoError as erro:
         flash(f"Não consegui ler o cupom: {erro}", "erro")
-        return redirect(url_for("enviar"))
+        return redirect(volta)
 
     repo = repositorio()
     if repo.ja_processado(qr.chave):
         flash("Este cupom já está na base.", "aviso")
-        return redirect(url_for("precos"))
+        return redirect(volta if direto else url_for("precos"))
 
     try:
         cupom = sefaz.consultar_por_qrcode(qr.url_consulta, qr.chave)
     except sefaz.ConsultaSEFAZError as erro:
         app.logger.warning("Consulta à SEFAZ falhou (chave %s): %s", qr.chave, erro)
         flash(f"A SEFAZ não devolveu a nota: {erro}", "erro")
-        return redirect(url_for("enviar"))
+        return redirect(volta)
 
     try:
         validar_cupom(cupom)
     except CupomInvalidoError as erro:
         app.logger.warning("Cupom recusado na validação (chave %s): %s", qr.chave, erro)
         flash(f"Este cupom veio com dados incoerentes e não pode entrar na base: {erro}.", "erro")
-        return redirect(url_for("enviar"))
+        return redirect(volta)
+
+    if direto:
+        # Mesmas garantias da conferência: a nota veio do portal oficial
+        # (interpretar_url) e passou na validação; só pula o "está correto?".
+        if not LIMITE_CONFIRMACOES.permitir(_origem()):
+            return _muitos_pedidos()
+        gravados = repo.registrar_cupom(cupom)
+        repo.salvar()
+        flash(f"{gravados} produtos de {nome_amigavel(cupom.estabelecimento.nome)} "
+              "adicionados. Pode ler o próximo!", "sucesso")
+        return redirect(volta)
 
     # Renderiza a conferência na mesma requisição: sem redirect, sem estado.
     return render_template("conferir.html", **contexto_conferencia(cupom))
@@ -849,6 +863,25 @@ def inicio():
         locais_json=json.dumps(locais, ensure_ascii=False),
         centro_json=json.dumps(centro),
     )
+
+
+@app.route("/api/qr", methods=["POST"])
+def api_qr():
+    """
+    Confere o QR lido pela câmera ANTES de enviar: formato, chave e portal
+    oficial da SEFAZ. É instantâneo (sem rede), então a câmera pode recusar
+    um QR qualquer na hora e continuar lendo, sem sair da tela.
+    """
+    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    try:
+        qr = interpretar_url(url)
+    except QRCodeInvalidoError as erro:
+        return jsonify({"ok": False, "erro": str(erro)})
+    return jsonify({
+        "ok": True,
+        "chave": qr.chave,
+        "ja_na_base": repositorio().ja_processado(qr.chave),
+    })
 
 
 @app.route("/comparar")

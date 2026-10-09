@@ -1461,3 +1461,43 @@ def test_telas_de_precos_navegaveis(cliente_web, cupom_real):
 
     assert cliente.get("/produto?p=nao-existe").status_code == 404
     assert cliente.get("/mercado/000").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Modo caixa: conferência do QR na hora e gravação direta
+# --------------------------------------------------------------------------
+
+def test_api_qr_aceita_portal_oficial_e_recusa_outro_site(cliente_web):
+    cliente = cliente_web.app.test_client()
+    ok = cliente.post("/api/qr", json={"url": URL_QR_REAL}).get_json()
+    assert ok["ok"] and ok["chave"] == CHAVE_REAL and not ok["ja_na_base"]
+
+    falso = URL_QR_REAL.replace("nfeweb.sefaz.go.gov.br", "golpe.example.com")
+    recusa = cliente.post("/api/qr", json={"url": falso}).get_json()
+    assert not recusa["ok"] and "portal" in recusa["erro"]
+
+    assert not cliente.post("/api/qr", json={"url": "https://exemplo.com"}).get_json()["ok"]
+
+
+def test_modo_direto_grava_sem_conferencia_e_volta_para_a_camera(web_com_sefaz_falsa, cupom_real):
+    cliente = web_com_sefaz_falsa.app.test_client()
+    resposta = cliente.post("/enviar", data={"url": URL_QR_REAL, "direto": "1"})
+    assert resposta.status_code == 302
+    assert "continuar=1" in resposta.location
+    assert len(Repositorio(web_com_sefaz_falsa.BASE)) == len(cupom_real.itens)
+
+    # O mesmo cupom de novo: avisa e continua no modo caixa, sem duplicar.
+    de_novo = cliente.post("/enviar", data={"url": URL_QR_REAL, "direto": "1"})
+    assert "continuar=1" in de_novo.location
+    assert len(Repositorio(web_com_sefaz_falsa.BASE)) == len(cupom_real.itens)
+
+    marcado = cliente.post("/api/qr", json={"url": URL_QR_REAL}).get_json()
+    assert marcado["ja_na_base"]
+
+
+def test_modo_direto_nao_grava_cupom_incoerente(web_com_sefaz_falsa, cupom_real):
+    cupom_real.itens[0].valor_total = 0
+    resposta = web_com_sefaz_falsa.app.test_client().post(
+        "/enviar", data={"url": URL_QR_REAL, "direto": "1"})
+    assert "continuar=1" in resposta.location
+    assert not Path(web_com_sefaz_falsa.BASE).exists()

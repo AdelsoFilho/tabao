@@ -34,6 +34,25 @@
   .ou{display:flex;align-items:center;gap:12px;color:var(--suave);font-size:13px;margin:18px 0 12px}
   .ou::before,.ou::after{content:"";flex:1;height:1px;background:var(--linha)}
   .oculto{display:none!important}
+
+  /* Interruptor do modo caixa */
+  .modo-caixa{display:flex;align-items:center;gap:12px;background:var(--branco);
+              border:1px solid var(--linha);border-radius:14px;padding:12px 14px;margin-bottom:12px;
+              cursor:pointer}
+  .modo-caixa .texto{flex:1;font-size:14px}
+  .modo-caixa .texto strong{display:block;font-size:14.5px}
+  .modo-caixa .texto span{color:var(--suave);font-size:12.5px}
+  .chave{position:relative;width:46px;height:28px;flex:none}
+  .chave input{opacity:0;width:0;height:0;position:absolute}
+  .chave .trilho{position:absolute;inset:0;background:#CBD3C8;border-radius:99px;transition:background .15s}
+  .chave .trilho::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;
+                        border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);
+                        transition:transform .15s}
+  .chave input:checked + .trilho{background:var(--verde)}
+  .chave input:checked + .trilho::after{transform:translateX(18px)}
+  .chave input:focus-visible + .trilho{outline:2px solid var(--musgo);outline-offset:2px}
+  .palco.aceito{box-shadow:0 0 0 4px var(--musgo)}
+  .palco.recusado{box-shadow:0 0 0 4px var(--acento)}
 </style>
 {% endblock %}
 {% block conteudo %}
@@ -62,6 +81,17 @@
 
 <div class="status" id="status"><span class="ponto"></span><span id="status-txt">Toque para ligar a câmera</span></div>
 
+<label class="modo-caixa" for="modo-direto">
+  <span class="texto">
+    <strong>Adicionar direto, sem conferir</strong>
+    <span>Leu, bipou, gravou: a câmera já fica pronta para o próximo cupom.</span>
+  </span>
+  <span class="chave">
+    <input type="checkbox" id="modo-direto">
+    <span class="trilho"></span>
+  </span>
+</label>
+
 <button class="botao grande" id="btn-ativar" type="button">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
        stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px">
@@ -74,6 +104,7 @@
 <div class="ou">ou</div>
 
 <form method="post" id="form-cupom" enctype="multipart/form-data">
+  <input type="hidden" name="direto" id="campo-direto" value="">
   <!-- A câmera e o leitor local preenchem este campo com a URL do QR; a galeria
        só envia a foto quando a leitura no aparelho não consegue. -->
   <button class="botao secundario grande" type="button" id="btn-galeria">
@@ -212,8 +243,98 @@
   });
   mostrarFila();
 
+  // ---------------- bip de caixa ----------------
+  // Gerado na hora (Web Audio): onda quadrada curta e aguda, como o leitor do
+  // caixa. O navegador só libera o som depois de um toque na página, então o
+  // contexto é criado no primeiro toque.
+  var audio = null;
+  function liberarSom() {
+    if (audio) { if (audio.state === "suspended") audio.resume(); return; }
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) { try { audio = new Ctx(); } catch (e) { audio = null; } }
+  }
+  document.addEventListener("pointerdown", liberarSom, { once: true });
+  btnAtivar.addEventListener("click", liberarSom);
+
+  function tom(freq, inicio, duracao, volume, forma) {
+    if (!audio) return;
+    var t = audio.currentTime + inicio;
+    var osc = audio.createOscillator(), ganho = audio.createGain();
+    osc.type = forma || "square";
+    osc.frequency.setValueAtTime(freq, t);
+    ganho.gain.setValueAtTime(0.0001, t);
+    ganho.gain.exponentialRampToValueAtTime(volume, t + 0.005);
+    ganho.gain.setValueAtTime(volume, t + duracao - 0.015);
+    ganho.gain.exponentialRampToValueAtTime(0.0001, t + duracao);
+    osc.connect(ganho).connect(audio.destination);
+    osc.start(t); osc.stop(t + duracao + 0.02);
+  }
+  function bip()       { tom(2700, 0, 0.11, 0.12); }                       // QR aceito
+  function bipGravou() { tom(2700, 0, 0.08, 0.12); tom(2700, 0.13, 0.08, 0.12); }
+  function bipErro()   { tom(220, 0, 0.32, 0.18, "sawtooth"); }             // recusado
+
+  // ---------------- modo caixa (direto, sem conferir) ----------------
+  var CHAVE_MODO = "tabao-modo-direto";
+  var modoDireto = document.getElementById("modo-direto");
+  var campoDireto = document.getElementById("campo-direto");
+  var palco = document.querySelector(".palco");
+  try { modoDireto.checked = localStorage.getItem(CHAVE_MODO) === "1"; } catch (e) {}
+  function sincronizarModo() {
+    campoDireto.value = modoDireto.checked ? "1" : "";
+    try { localStorage.setItem(CHAVE_MODO, modoDireto.checked ? "1" : "0"); } catch (e) {}
+  }
+  modoDireto.addEventListener("change", sincronizarModo);
+  sincronizarModo();
+
+  function piscar(classe) {
+    palco.classList.add(classe);
+    setTimeout(function () { palco.classList.remove(classe); }, 700);
+  }
+
+  // QR recusado: avisa e volta a procurar, ignorando o mesmo código por um
+  // tempo para não bipar erro sem parar enquanto ele segue na frente da câmera.
+  var recusado = { texto: "", ate: 0 };
+  function recusar(texto, motivo) {
+    bipErro();
+    if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+    piscar("recusado");
+    estado(motivo, "erro");
+    recusado = { texto: texto, ate: Date.now() + 4000 };
+    setTimeout(function () {
+      if (stream) { lendo = true; estado("Procurando o QR Code…", "lendo"); requestAnimationFrame(tick); }
+    }, 1800);
+  }
+
   function achou(texto) {
+    if (texto === recusado.texto && Date.now() < recusado.ate) return;
     lendo = false;
+    if (!navigator.onLine) return aceitar(texto);
+
+    // Confere as regras (formato e portal oficial da SEFAZ) antes de sair da tela.
+    estado("Conferindo o QR Code…", "lendo");
+    fetch("/api/qr", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: texto }), cache: "no-store",
+    }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function (d) {
+        if (!d.ok) {
+          // A mensagem do servidor lista domínios; no caixa basta o essencial.
+          const motivo = /portal/i.test(d.erro || "")
+            ? "QR Code recusado: não é do site oficial da SEFAZ."
+            : "Este QR Code não é de um cupom fiscal.";
+          return recusar(texto, motivo);
+        }
+        if (d.ja_na_base) return recusar(texto, "Este cupom já está na base. Pode ler o próximo.");
+        aceitar(texto);
+      })
+      // Sem resposta da conferência: segue o fluxo normal, o servidor confere de novo.
+      .catch(function () { aceitar(texto); });
+  }
+
+  function aceitar(texto) {
+    lendo = false;
+    bip();
+    piscar("aceito");
     if (navigator.vibrate) navigator.vibrate(60);
     pararCamera();
     if (!navigator.onLine) {
@@ -225,7 +346,8 @@
       mostrarFila();
       return;
     }
-    estado("QR Code lido — consultando a SEFAZ…", "ok");
+    estado(modoDireto.checked ? "QR Code lido — gravando o cupom…"
+                              : "QR Code lido — consultando a SEFAZ…", "ok");
     campoUrl.value = texto;
     arquivo.value = "";
     form.submit();
@@ -276,6 +398,14 @@
   }
 
   btnAtivar.addEventListener("click", function () { iniciar(); });
+
+  // Voltando de uma gravação no modo caixa: confirma com o bip duplo e já
+  // religa a câmera para o próximo cupom.
+  if (new URLSearchParams(location.search).get("continuar") === "1" && modoDireto.checked) {
+    if (document.querySelector(".aviso.sucesso")) { liberarSom(); bipGravou(); }
+    else if (document.querySelector(".aviso.erro")) { liberarSom(); bipErro(); }
+    iniciar();
+  }
   btnTrocar.addEventListener("click", function () {
     if (cameras.length < 2) return;
     camAtual = (camAtual + 1) % cameras.length;

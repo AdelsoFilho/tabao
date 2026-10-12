@@ -165,10 +165,17 @@
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     { maxZoom: 19, attribution: "Imagens &copy; Esri, Maxar, Earthstar Geographics" });
 
-  // A imagem de satélite não traz nome de rua: esta camada desenha só rótulos.
-  const rotulos = L.tileLayer(
-    "https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
-    { maxZoom: 19, attribution: "&copy; CARTO" });
+  // A imagem de satélite não traz nome de rua: estas camadas desenham só os
+  // rótulos (ruas; bairros e cidades). São da Esri, como o satélite, e
+  // gratuitas. Os rótulos da CARTO passaram a exigir chave e vinham com a
+  // marca "API KEY REQUIRED" estampada no mapa.
+  const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/";
+  const rotulos = L.layerGroup([
+    L.tileLayer(ESRI + "World_Transportation/MapServer/tile/{z}/{y}/{x}",
+                { maxZoom: 19, attribution: "Rótulos &copy; Esri" }),
+    L.tileLayer(ESRI + "World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+                { maxZoom: 19 }),
+  ]);
 
   const ruas = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     { maxZoom: 19, attribution: "&copy; OpenStreetMap" });

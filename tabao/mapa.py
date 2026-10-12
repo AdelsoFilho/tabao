@@ -456,48 +456,55 @@ def localizar_estabelecimentos(repositorio, cidade: str = "", uf: str = "") -> i
     Devolve quantos foram localizados. Respeita o limite de uma requisição por
     segundo do Nominatim.
     """
-    from .cnpj import ConsultaCNPJError, consultar as consultar_cnpj
-
-    pendentes = repositorio.estabelecimentos_sem_local()
     localizados = 0
-
-    for estabelecimento in pendentes:
-        achado = None
-
-        # 1) Registro oficial do CNPJ: traz o CEP, que o cupom não tem.
-        try:
-            registro = consultar_cnpj(estabelecimento.cnpj)
-        except ConsultaCNPJError:
-            registro = None
-
-        if registro:
-            estabelecimento.cep = registro.cep
-            estabelecimento.bairro = registro.bairro
-            if registro.nome_fantasia:
-                estabelecimento.nome = registro.nome_fantasia
-            estabelecimento.endereco = registro.endereco_completo
-            time.sleep(INTERVALO_ENTRE_CHAMADAS)
-
-            achado = geocodificar_por_cep(
-                registro.cep, registro.logradouro, registro.numero, registro.municipio
-            )
-            time.sleep(INTERVALO_ENTRE_CHAMADAS)
-
-        # 2) Sem CNPJ ou sem CEP, cai no endereço impresso na nota.
-        if achado is None:
-            achado = geocodificar(estabelecimento.endereco, cidade, uf)
-            time.sleep(INTERVALO_ENTRE_CHAMADAS)
-
-        if achado is None:
-            continue
-
-        estabelecimento.latitude, estabelecimento.longitude, estabelecimento.precisao = achado
-        repositorio.atualizar_estabelecimento(estabelecimento)
-        localizados += 1
+    for estabelecimento in repositorio.estabelecimentos_sem_local():
+        if localizar_estabelecimento(repositorio, estabelecimento, cidade, uf):
+            localizados += 1
 
     if localizados:
         repositorio.salvar()
     return localizados
+
+
+def localizar_estabelecimento(repositorio, estabelecimento,
+                              cidade: str = "", uf: str = "") -> bool:
+    """
+    Põe UM mercado no mapa: CNPJ -> CEP oficial -> coordenadas, com o endereço
+    do cupom como reserva. Grava e devolve True quando acha.
+    """
+    from .cnpj import ConsultaCNPJError, consultar as consultar_cnpj
+
+    achado = None
+
+    # 1) Registro oficial do CNPJ: traz o CEP, que o cupom não tem.
+    try:
+        registro = consultar_cnpj(estabelecimento.cnpj)
+    except ConsultaCNPJError:
+        registro = None
+
+    if registro:
+        estabelecimento.cep = registro.cep
+        estabelecimento.bairro = registro.bairro
+        if registro.nome_fantasia:
+            estabelecimento.nome = registro.nome_fantasia
+        estabelecimento.endereco = registro.endereco_completo
+        time.sleep(INTERVALO_ENTRE_CHAMADAS)
+
+        achado = geocodificar_por_cep(
+            registro.cep, registro.logradouro, registro.numero, registro.municipio
+        )
+        time.sleep(INTERVALO_ENTRE_CHAMADAS)
+
+    # 2) Sem CNPJ ou sem CEP, cai no endereço impresso na nota.
+    if achado is None:
+        achado = geocodificar(estabelecimento.endereco, cidade, uf)
+
+    if achado is None:
+        return False
+
+    estabelecimento.latitude, estabelecimento.longitude, estabelecimento.precisao = achado
+    repositorio.atualizar_estabelecimento(estabelecimento)
+    return True
 
 
 def locais_dos_estabelecimentos(repositorio) -> list[Local]:

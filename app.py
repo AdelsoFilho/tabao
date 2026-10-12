@@ -34,7 +34,8 @@ from tabao.produtos import CESTA_BASICA, classificar, nome_do_item
 from tabao.qrcode_nfce import QRCodeInvalidoError, interpretar_url, ler_de_imagem
 from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimentos,
                         importar_area, locais_dos_estabelecimentos,
-                        localizar_estabelecimentos, mesclar)
+                        localizar_estabelecimento, localizar_estabelecimentos,
+                        mesclar)
 from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import BancoError, criar_repositorio
@@ -569,6 +570,24 @@ def produto():
     )
 
 
+def _por_no_mapa(repo, cnpj: str) -> None:
+    """
+    Mercado novo entra no mapa na hora em que o primeiro cupom dele é gravado.
+
+    Antes isso dependia de rodar "cli.py localizar" à mão, e mercados com
+    preço ficavam de fora do mapa e do "vale a pena ir?". É melhor esforço:
+    se o serviço de CNPJ ou de endereço falhar, o cupom continua gravado.
+    """
+    estabelecimento = repo.registro_estabelecimentos.get(cnpj)
+    if estabelecimento is None or estabelecimento.localizado:
+        return
+    try:
+        if localizar_estabelecimento(repo, estabelecimento):
+            repo.salvar()
+    except Exception as erro:   # rede, serviço fora do ar, resposta estranha
+        app.logger.warning("Não consegui localizar o mercado %s: %s", cnpj, erro)
+
+
 @app.route("/enviar", methods=["GET", "POST"])
 def enviar():
     """Recebe a foto do cupom (ou a URL do QR) e mostra os itens para conferência."""
@@ -643,6 +662,7 @@ def enviar():
             return _muitos_pedidos()
         gravados = repo.registrar_cupom(cupom)
         repo.salvar()
+        _por_no_mapa(repo, cupom.estabelecimento.cnpj)
         flash(f"{gravados} produtos de {nome_amigavel(cupom.estabelecimento.nome)} "
               "adicionados. Pode ler o próximo!", "sucesso")
         return redirect(volta)
@@ -698,6 +718,7 @@ def confirmar():
         return redirect(url_for("precos"))
     gravados = repo.registrar_cupom(cupom)
     repo.salvar()
+    _por_no_mapa(repo, cupom.estabelecimento.cnpj)
 
     flash(f"{gravados} produtos adicionados à base. Obrigado por contribuir!", "sucesso")
     return redirect(url_for("precos"))

@@ -878,6 +878,8 @@ def cliente_web(tmp_path, monkeypatch):
     import app as modulo_app
 
     monkeypatch.setattr(modulo_app, "BASE", tmp_path / "precos.json")
+    # Testes não saem para a internet: localizar mercado vira "não achou".
+    monkeypatch.setattr(modulo_app, "localizar_estabelecimento", lambda *a, **k: False)
     modulo_app.app.config["TESTING"] = False
     modulo_app.app.config["PROPAGATE_EXCEPTIONS"] = False
     return modulo_app
@@ -1501,3 +1503,33 @@ def test_modo_direto_nao_grava_cupom_incoerente(web_com_sefaz_falsa, cupom_real)
         "/enviar", data={"url": URL_QR_REAL, "direto": "1"})
     assert "continuar=1" in resposta.location
     assert not Path(web_com_sefaz_falsa.BASE).exists()
+
+
+
+def test_cupom_gravado_poe_o_mercado_no_mapa(web_com_sefaz_falsa, monkeypatch, cupom_real):
+    chamados = []
+
+    def localizar(repo, estabelecimento, *a, **k):
+        chamados.append(estabelecimento.cnpj)
+        estabelecimento.latitude, estabelecimento.longitude = -16.65, -49.25
+        estabelecimento.precisao = "endereco"
+        repo.atualizar_estabelecimento(estabelecimento)
+        return True
+
+    monkeypatch.setattr(web_com_sefaz_falsa, "localizar_estabelecimento", localizar)
+    web_com_sefaz_falsa.app.test_client().post("/enviar", data={"url": URL_QR_REAL, "direto": "1"})
+
+    assert chamados == [cupom_real.estabelecimento.cnpj]
+    mercado = Repositorio(web_com_sefaz_falsa.BASE).registro_estabelecimentos[chamados[0]]
+    assert mercado.localizado
+
+
+def test_falha_ao_localizar_nao_impede_a_gravacao(web_com_sefaz_falsa, monkeypatch, cupom_real):
+    def quebra(*a, **k):
+        raise ConnectionError("BrasilAPI fora do ar")
+
+    monkeypatch.setattr(web_com_sefaz_falsa, "localizar_estabelecimento", quebra)
+    resposta = web_com_sefaz_falsa.app.test_client().post(
+        "/enviar", data={"url": URL_QR_REAL, "direto": "1"})
+    assert resposta.status_code == 302
+    assert len(Repositorio(web_com_sefaz_falsa.BASE)) == len(cupom_real.itens)

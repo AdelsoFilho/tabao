@@ -16,6 +16,7 @@ não repetir consultas.
 """
 
 import json
+import os
 import re
 import time
 import unicodedata
@@ -278,6 +279,45 @@ def coordenadas_do_cep(cep: str) -> Optional[tuple[float, float, str]]:
         return None
 
 
+GOOGLE_GEOCODING = "https://maps.googleapis.com/maps/api/geocode/json"
+
+
+def geocodificar_google(tipo: str, logradouro: str, numero: str, bairro: str,
+                        cidade: str, cep: str) -> Optional[tuple[float, float, str]]:
+    """
+    Geocodificação do Google, quando há GOOGLE_MAPS_KEY no ambiente.
+
+    O Google tem a numeração das ruas de Goiânia, que o OpenStreetMap não
+    tem: acha a porta. Só é usado se a rua devolvida for a do endereço
+    oficial, a mesma conferência das outras fontes.
+    """
+    chave = os.environ.get("GOOGLE_MAPS_KEY", "").strip()
+    if not chave or not logradouro:
+        return None
+    endereco = ", ".join(p for p in [
+        " ".join(x for x in [tipo, logradouro] if x),
+        numero if numero and numero.upper() not in ("S/N", "SN", "0") else "",
+        bairro, cidade, cep,
+    ] if p)
+    try:
+        dados = _requisitar(GOOGLE_GEOCODING, {
+            "address": endereco, "components": "country:BR", "language": "pt-BR",
+            "key": chave,
+        }, tempo_limite=20) or {}
+    except MapaError:
+        return None
+    for resultado in dados.get("results", []):
+        partes = resultado.get("address_components", [])
+        rua = next((c["long_name"] for c in partes if "route" in c.get("types", [])), "")
+        if not _mesma_rua(rua, logradouro):
+            continue
+        tipos = set(resultado.get("types", []))
+        exato = bool(tipos & {"street_address", "premise", "subpremise", "establishment"})
+        local = resultado["geometry"]["location"]
+        return (float(local["lat"]), float(local["lng"]), "endereco" if exato else "rua")
+    return None
+
+
 def loja_na_rua(nome: str, logradouro: str, cidade: str = "", bairro: str = ""
                 ) -> Optional[tuple[float, float, str]]:
     """
@@ -323,6 +363,12 @@ def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
         return None
 
     cep_formatado = f"{cep_limpo[:5]}-{cep_limpo[5:]}"
+
+    achado = geocodificar_google(tipo_logradouro, logradouro, numero, bairro, cidade,
+                                 cep_formatado)
+    if achado:
+        _registrar_fonte("Google")
+        return achado
 
     if logradouro and numero and numero.upper() not in ("S/N", "SN", "0"):
         rua = " ".join(p for p in [numero, tipo_logradouro, logradouro] if p)

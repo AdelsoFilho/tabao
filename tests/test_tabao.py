@@ -1741,3 +1741,21 @@ def test_loja_pelo_nome_so_vale_na_rua_oficial(monkeypatch):
     assert mapa.loja_na_rua("ATACADAO COSTA", "GOIAS", "GOIANIA", "SET CENTRAL") == (-16.6611, -49.2619, "endereco")
     # Nenhuma loja da rede na rua oficial: não arrisca.
     assert mapa.loja_na_rua("ATACADAO COSTA", "PORTUGAL", "GOIANIA", "SETOR MARISTA") is None
+
+
+def test_google_so_entra_com_chave_e_na_rua_oficial(monkeypatch):
+    from tabao import mapa
+    resposta = {"results": [
+        {"types": ["route"], "geometry": {"location": {"lat": -16.70, "lng": -49.20}},
+         "address_components": [{"long_name": "Rua Qualquer", "types": ["route"]}]},
+        {"types": ["street_address"], "geometry": {"location": {"lat": -16.7349, "lng": -49.2357}},
+         "address_components": [{"long_name": "Avenida Bela Vista", "types": ["route"]}]},
+    ]}
+    monkeypatch.setattr(mapa, "_requisitar", lambda *a, **k: resposta)
+
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    assert mapa.geocodificar_google("AVENIDA", "BELA VISTA", "1077", "", "GOIANIA", "") is None
+
+    monkeypatch.setenv("GOOGLE_MAPS_KEY", "chave-de-teste")
+    assert mapa.geocodificar_google("AVENIDA", "BELA VISTA", "1077", "JARDIM BELA VISTA",
+                                    "GOIANIA", "74863-050") == (-16.7349, -49.2357, "endereco")

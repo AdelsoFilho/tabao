@@ -1745,7 +1745,7 @@ def test_loja_pelo_nome_so_vale_na_rua_oficial(monkeypatch):
 
 def test_google_so_entra_com_chave_e_na_rua_oficial(monkeypatch):
     from tabao import mapa
-    resposta = {"results": [
+    resposta = {"status": "OK", "results": [
         {"types": ["route"], "geometry": {"location": {"lat": -16.70, "lng": -49.20}},
          "address_components": [{"long_name": "Rua Qualquer", "types": ["route"]}]},
         {"types": ["street_address"], "geometry": {"location": {"lat": -16.7349, "lng": -49.2357}},

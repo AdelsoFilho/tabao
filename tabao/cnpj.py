@@ -77,7 +77,10 @@ class RegistroCNPJ:
     @property
     def endereco_completo(self) -> str:
         partes = [
-            f"{self.logradouro}, {self.numero}".strip(", "),
+            # Com o tipo ("AVENIDA GOIAS"): os apps de navegação acham a porta
+            # com muito mais certeza do que por "GOIAS, 2151".
+            f"{' '.join(p for p in [self.tipo_logradouro, self.logradouro] if p)}, "
+            f"{self.numero}".strip(", "),
             self.bairro,
             self.municipio,
             self.uf,

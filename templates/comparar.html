@@ -134,13 +134,15 @@
         }
       }
       const verNoMapa = "/mapa?foco=" + r.latitude + "," + r.longitude;
-      const destino = r.latitude + "," + r.longitude;
+      // Pelo endereço oficial: os apps de navegação acham a porta pelo número.
+      const destino = r.endereco ? encodeURIComponent(r.endereco) : r.latitude + "," + r.longitude;
+      const waze = r.endereco ? "q=" + destino : "ll=" + destino;
       const chegar =
         '<details class="chegar"><summary class="botao secundario">Como chegar</summary>' +
         '<div class="apps">' +
           '<a href="https://www.google.com/maps/dir/?api=1&destination=' + destino +
             '" target="_blank" rel="noopener"><span class="ponto" style="background:#4285F4"></span>Google Maps</a>' +
-          '<a href="https://waze.com/ul?ll=' + destino + '&navigate=yes" target="_blank" rel="noopener">' +
+          '<a href="https://waze.com/ul?' + waze + '&navigate=yes" target="_blank" rel="noopener">' +
             '<span class="ponto" style="background:#33CCFF"></span>Waze</a>' +
           '<a href="https://maps.apple.com/?daddr=' + destino + '&dirflg=d" target="_blank" rel="noopener">' +
             '<span class="ponto" style="background:#A2AAAD"></span>Apple Maps</a>' +

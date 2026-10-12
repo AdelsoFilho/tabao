@@ -247,8 +247,12 @@
     // Bloco de valores: o que a cesta custa aqui (ou quantos preços há) e a
     // localização exata do ponto. Discreto, só informativo.
     const coord = local.latitude.toFixed(5) + ", " + local.longitude.toFixed(5);
-    const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
-                    local.latitude + "," + local.longitude;
+    // Navegação pelo ENDEREÇO oficial: o Google Maps, o Waze e o Apple Maps
+    // têm a numeração das ruas e acham a porta; a coordenada do TáBão, que
+    // vem de mapa aberto, às vezes só acerta o trecho da rua.
+    const destino = local.endereco ? encodeURIComponent(local.endereco)
+                                   : local.latitude + "," + local.longitude;
+    const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + destino;
     let valores = "";
     if (local.cnpj) {
       let linha;
@@ -270,9 +274,11 @@
     }
     // "Como chegar": links universais que abrem o app de navegação instalado
     // (no celular) ou a versão web (no computador), já com o destino traçado.
-    const g = "https://www.google.com/maps/dir/?api=1&destination=" + local.latitude + "," + local.longitude;
-    const w = "https://waze.com/ul?ll=" + local.latitude + "," + local.longitude + "&navigate=yes";
-    const a = "https://maps.apple.com/?daddr=" + local.latitude + "," + local.longitude + "&dirflg=d";
+    const g = "https://www.google.com/maps/dir/?api=1&destination=" + destino;
+    const w = local.endereco
+      ? "https://waze.com/ul?q=" + destino + "&navigate=yes"
+      : "https://waze.com/ul?ll=" + destino + "&navigate=yes";
+    const a = "https://maps.apple.com/?daddr=" + destino + "&dirflg=d";
     const navegacao =
       '<div class="rota-rotulo">Como chegar</div>' +
       '<div class="rota-apps">' +

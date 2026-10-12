@@ -1157,7 +1157,8 @@ def test_painel_inteiro_faz_uma_unica_consulta(postgres_falso):
     assert len(repo.precos_da_cesta) == 1
     assert repo.estabelecimentos() == {"111": "Mercado A", "222": "Mercado B"}
     assert repo.itens_cobertos() == {"arroz"}
-    assert repo.categorias_cobertas() == {"graos": 1, "limpeza": 1}
+    # A categoria vem da descrição, não da coluna gravada ("graos" na linha).
+    assert repo.categorias_cobertas() == {"mercearia": 1, "limpeza": 1}
     assert [p.descricao_original for p in repo.buscar_produto("arroz")] == ["ARROZ TIPO 1 5KG"]
     assert len(conexao.consultas) == 1
 
@@ -1533,3 +1534,84 @@ def test_falha_ao_localizar_nao_impede_a_gravacao(web_com_sefaz_falsa, monkeypat
         "/enviar", data={"url": URL_QR_REAL, "direto": "1"})
     assert resposta.status_code == 302
     assert len(Repositorio(web_com_sefaz_falsa.BASE)) == len(cupom_real.itens)
+
+
+# --------------------------------------------------------------------------
+# Padronização: categoria pelo tipo do produto e junção entre mercados
+# --------------------------------------------------------------------------
+
+from tabao.padronizacao import padronizar
+
+
+@pytest.mark.parametrize("descricao, categoria", [
+    ("AGUA SANIT POLIT 2L", "limpeza"),
+    ("AGUA SANITARIA YPE GL 5L", "limpeza"),
+    ("BEB GATORADE LIMAO 500ML", "bebidas"),
+    ("BEB GATORADE MARACUJA 500ML", "bebidas"),
+    ("DETERGENTE LIMPOL FR 500ML LIMAO", "limpeza"),
+    ("DET OESTE 500ML MACA", "limpeza"),
+    ("FLANELA COPALIMPA 30X50CM LARANJA", "limpeza"),
+    ("PANO PRATO COPALIMPA 66X44CM XADREZ", "limpeza"),
+    ("PICOLE KIDS BLUE ICE PINTA LINGUA", "congelados"),
+    ("PICOLE FR LIMAO", "congelados"),
+    ("PAO QUEIJO TRAD GERM", "padaria"),
+    ("PAO LEITE SEVEN BOYS", "padaria"),
+    ("PETI SUI CHA CH 320G", "laticinios"),
+    ("MANT S SAL CARREFOUR", "laticinios"),
+    ("OLEO ESSEN EUC 120ML", "casa"),
+    ("PIPOCA MICROONDAS SINHA 90GR MANTEIGA CINE", "mercearia"),
+    ("CERV HEINEK 330ml FD", "bebidas"),
+    ("SBT PHEBO 90G ROSAS", "higiene"),
+    ("CD COLG TOT 90G ANTI", "higiene"),
+    ("CAMISETA MC DISNEY P", "vestuario"),
+    ("IOG NAT NESTLE INTEG", "laticinios"),
+    ("ARR TIO JORGE T1 5kg", "mercearia"),
+])
+def test_categoria_pelo_tipo_do_produto(descricao, categoria):
+    assert cat.categorizar(descricao) == categoria
+
+
+@pytest.mark.parametrize("a, b", [
+    ("BEB ENERG EXTRA POWER TRAD PET 2L", "EN EX POW TR 2l UN"),
+    ("DETERGENTE LIMPOL FR 500ML LIMAO", "DET LIMPOL LIM 500ML"),
+    ("OVO BCO GRANDE C/30", "OVO DA FAMILIA BDJ PVC C/30UN BCO GRANDE"),
+    ("CEBOLA BRANCA Kg KG", "CEBOLA UNIAO kg"),
+    ("AGUA MINERAL 500ML", "AGUA M MIN 500ml UN"),
+])
+def test_mesmo_produto_em_mercados_diferentes(a, b):
+    assert padronizar(a).familia == padronizar(b).familia
+    assert padronizar(a).tamanho == padronizar(b).tamanho
+
+
+@pytest.mark.parametrize("a, b", [
+    ("ENERG MONS 473ml UN", "BEB ENERG MONSTER LT 473ML Z/ACUC GREEN"),   # comum x zero
+    ("REF COCA COLA 1,5l UN", "COCA COLA PET 2l UN"),                     # tamanhos
+    ("DET LIMPOL COC 500ML", "DET LIMPOL LIM 500ML"),                     # sabores
+    ("LEITE UHT SEMI ITALA", "LEITE UHT ITALAC INT 1L"),                  # semi x integral
+    ("IOG NAT NESTLE INTEG", "IOG LIQ NESTLE VIT"),                       # natural x líquido
+    ("AGUA COM GAS 500ML U", "AGUA MINERAL 500ML"),                       # com x sem gás
+])
+def test_produtos_diferentes_nao_se_juntam(a, b):
+    pa, pb = padronizar(a), padronizar(b)
+    assert (pa.familia, pa.tamanho) != (pb.familia, pb.tamanho)
+
+
+def test_nome_padronizado_legivel():
+    assert padronizar("BEB GATORADE LIMAO 500ML").nome == "Isotônico Limão Gatorade 500 ml"
+    assert padronizar("P FORMA S BOYS 450G").nome == "Pão de forma Seven Boys 450 g"
+    assert padronizar("PAPEL HIG FD MAX 30M LV24PG21 NEUTRO").tamanho is None   # 30 metros
+
+
+def test_catalogo_so_junta_precos_na_mesma_unidade():
+    precos = [
+        _obs("BALA DURA HALLS CERE", "A", 1.49, 1),
+        _obs("BALA HALLS 27,5GR PQ CEREJA 2.0", "B", 50.55, 2),
+        _obs("BEB ENERG EXTRA POWER TRAD PET 2L", "C", 5.50, 3),
+        _obs("EN EX POW TR 2l UN", "D", 5.45, 4),
+    ]
+    precos[1].unidade = "un. padrão"          # gravado por kg
+    grupos = agrupar_produtos(precos)
+    extra = [g for g in grupos if "Extra Power" in g.descricao]
+    halls = [g for g in grupos if "Halls" in g.descricao]
+    assert len(extra) == 1 and extra[0].mercados == 2
+    assert len(halls) == 2 and all(g.mercados == 1 for g in halls)

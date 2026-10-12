@@ -10,11 +10,13 @@ por mercado: o preço mais recente que alguém pagou lá.
 
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Iterable, Optional
 
+from .categorias import categorizar
 from .modelos import PrecoObservado
+from .padronizacao import padronizar
 from .produtos import normalizar
 
 # Pedaços da razão social que não ajudam a reconhecer o mercado: o código
@@ -62,11 +64,12 @@ class Oferta:
 
 @dataclass
 class Produto:
-    chave: str                     # descrição normalizada: identifica o produto
-    descricao: str                 # como aparece no cupom
+    chave: str                     # identifica o produto (ver _chaves)
+    descricao: str                 # nome padronizado, ou o do cupom
     categoria: str
     item_cesta: Optional[str]
     ofertas: list[Oferta] = field(default_factory=list)   # da mais barata à mais cara
+    no_cupom: list[str] = field(default_factory=list)     # como cada mercado escreve
 
     @property
     def menor(self) -> float:
@@ -86,6 +89,10 @@ class Produto:
 
 
 def chave_do_produto(descricao: str) -> str:
+    """Chave de um produto isolado (sem olhar os outros); ver _chaves."""
+    padrao = padronizar(descricao)
+    if padrao.familia:
+        return f"{padrao.familia}|{padrao.tamanho or '?'}"
     return normalizar(descricao)
 
 
@@ -94,18 +101,72 @@ def _comparavel(data: datetime) -> datetime:
     return data.replace(tzinfo=None)
 
 
+def _chaves(precos: list[PrecoObservado]) -> list[str]:
+    """
+    A chave de produto de cada observação, olhando o conjunto.
+
+    1. Produto identificado (tipo + marca + variante, ver padronizacao): a
+       chave é essa família mais o tamanho.
+    2. Tamanho que o cupom cortou ("PAO FORMA SEVEN BOYS", sem os 450 g):
+       herda o tamanho quando a família só aparece com UM tamanho conhecido.
+       Com dois ou mais (Coca 1 L e 2 L) não dá para saber, e fica à parte.
+    3. Dentro do mesmo mercado, o código interno do produto manda: se o
+       mercado mudou a descrição, o código continua o mesmo.
+    """
+    padroes = [padronizar(p.descricao_original) for p in precos]
+
+    tamanhos: dict[str, set[str]] = defaultdict(set)
+    for padrao in padroes:
+        if padrao.familia and padrao.tamanho:
+            tamanhos[padrao.familia].add(padrao.tamanho)
+
+    chaves = []
+    for p, padrao in zip(precos, padroes):
+        if padrao.familia:
+            tamanho = padrao.tamanho
+            if tamanho is None and len(tamanhos[padrao.familia]) == 1:
+                tamanho = next(iter(tamanhos[padrao.familia]))
+            # Só junta preços na mesma unidade: com o peso na descrição o preço
+            # é gravado por kg/l ("un. padrão"); sem ele, por embalagem. Juntar
+            # os dois compararia R$ 1,49 a bala com R$ 50,55 o quilo da bala.
+            unidade = "padrao" if p.unidade == "un. padrão" else (p.unidade or "").upper()
+            chaves.append(f"{padrao.familia}|{unidade}|{tamanho or '?'}")
+        else:
+            chaves.append(normalizar(p.descricao_original))
+
+    por_codigo: dict[tuple[str, str], str] = {}
+    for i, p in enumerate(precos):
+        if p.codigo:
+            chaves[i] = por_codigo.setdefault((p.cnpj, p.codigo), chaves[i])
+    return chaves
+
+
+def _nome_do_grupo(original: str, chave: str) -> str:
+    """Nome padronizado com o tamanho do grupo (que pode ter sido herdado)."""
+    padrao = padronizar(original)
+    if not padrao.familia:
+        # Não junta com outros mercados, mas o nome legível já ajuda
+        # ("Linguiça 800 g" em vez de "LING CHURR FGO SUP FGO 800G").
+        return padrao.nome
+    tamanho = chave.rsplit("|", 1)[-1]
+    if tamanho != "?" and tamanho != padrao.tamanho:
+        padrao = replace(padrao, tamanho=tamanho)
+    return padrao.nome
+
+
 def agrupar_produtos(precos: Iterable[PrecoObservado],
                      nomes: Optional[dict[str, str]] = None) -> list[Produto]:
     """
     Agrupa as observações em produtos, cada um com uma oferta por mercado.
 
     `nomes` traduz CNPJ em nome de exibição (o do mapa, quando há). Sai
-    ordenado por descrição.
+    ordenado por nome.
     """
     nomes = nomes or {}
+    precos = list(precos)
     por_produto: dict[str, list[PrecoObservado]] = defaultdict(list)
-    for p in precos:
-        por_produto[chave_do_produto(p.descricao_original)].append(p)
+    for p, chave in zip(precos, _chaves(precos)):
+        por_produto[chave].append(p)
 
     produtos = []
     for chave, observacoes in por_produto.items():
@@ -124,11 +185,11 @@ def agrupar_produtos(precos: Iterable[PrecoObservado],
             ))
         ofertas.sort(key=lambda o: o.preco)
 
-        descricao = Counter(o.descricao_original for o in observacoes).most_common(1)[0][0]
+        originais = [d for d, _ in Counter(o.descricao_original for o in observacoes).most_common()]
         produtos.append(Produto(
-            chave=chave, descricao=descricao,
-            categoria=observacoes[0].categoria, item_cesta=observacoes[0].item_cesta,
-            ofertas=ofertas,
+            chave=chave, descricao=_nome_do_grupo(originais[0], chave),
+            categoria=categorizar(originais[0]), item_cesta=observacoes[0].item_cesta,
+            ofertas=ofertas, no_cupom=originais,
         ))
 
     produtos.sort(key=lambda p: p.descricao)
@@ -137,6 +198,5 @@ def agrupar_produtos(precos: Iterable[PrecoObservado],
 
 def produto_por_chave(precos: Iterable[PrecoObservado], chave: str,
                       nomes: Optional[dict[str, str]] = None) -> Optional[Produto]:
-    alvo = [p for p in precos if chave_do_produto(p.descricao_original) == chave]
-    grupos = agrupar_produtos(alvo, nomes)
-    return grupos[0] if grupos else None
+    # Agrupa tudo (o tamanho herdado depende do conjunto) e escolhe o produto.
+    return next((p for p in agrupar_produtos(precos, nomes) if p.chave == chave), None)

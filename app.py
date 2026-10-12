@@ -24,7 +24,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tabao import sefaz
-from tabao.catalogo import (agrupar_produtos, chave_do_produto, nome_amigavel,
+from tabao.catalogo import (agrupar_produtos, nome_amigavel,
                             produto_por_chave)
 from tabao.categorias import nome_da_categoria, todas_as_categorias
 from tabao.cesta import cesta_comparavel, estatisticas_do_item, montar_ranking
@@ -515,9 +515,8 @@ def mercado(cnpj: str):
     nomes = _nomes_mercados(repo)
     # Agrupa a base inteira para cada produto daqui saber se está mais barato
     # em outro lugar.
-    chaves_aqui = {chave_do_produto(p.descricao_original) for p in precos_aqui}
-    produtos_aqui = agrupar_produtos(
-        [p for p in repo.precos if chave_do_produto(p.descricao_original) in chaves_aqui], nomes)
+    produtos_aqui = [p for p in agrupar_produtos(repo.precos, nomes)
+                     if any(o.cnpj == cnpj for o in p.ofertas)]
     por_categoria: dict[str, list] = {}
     for produto in produtos_aqui:
         por_categoria.setdefault(produto.categoria, []).append(produto)

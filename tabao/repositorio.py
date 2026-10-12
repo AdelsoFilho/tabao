@@ -122,6 +122,10 @@ class Repositorio:
             return
 
         self._precos = [PrecoObservado.de_dicionario(d) for d in dados.get("precos", [])]
+        # Categoria recalculada na leitura: regra nova vale também para o que
+        # já está gravado.
+        for preco in self._precos:
+            preco.categoria = categorizar(preco.descricao_original)
         self._chaves_processadas = set(dados.get("cupons_processados", []))
         self._estabelecimentos = {
             cnpj: Estabelecimento(**registro)

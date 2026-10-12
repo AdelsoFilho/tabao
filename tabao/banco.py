@@ -337,7 +337,9 @@ class RepositorioPostgres(_UsuariosPostgres):
         return PrecoObservado(
             descricao_original=linha[0], cnpj=linha[1], nome_estabelecimento=linha[2],
             preco=float(linha[3]), unidade=linha[4], observado_em=linha[5],
-            chave_cupom=linha[6], categoria=linha[7], item_cesta=linha[8],
+            # Categoria recalculada na leitura: regra nova vale também para o
+            # que já está gravado, sem precisar migrar o banco.
+            chave_cupom=linha[6], categoria=categorizar(linha[0]), item_cesta=linha[8],
             codigo=linha[9] or "",
         )
 

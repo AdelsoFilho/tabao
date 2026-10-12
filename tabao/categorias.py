@@ -66,6 +66,8 @@ CATEGORIAS: dict[str, tuple[str, set[str]]] = {
         "ESCOVA DENTAL", "DESODORANTE", "PAPEL HIGIENICO", "ABSORVENTE",
         "FRALDA", "HIDRATANTE", "BARBEAR", "COTONETE",
     }),
+    # Só pelo tipo (padronizacao): nenhuma palavra solta deve mandar algo pra cá.
+    "vestuario": ("Roupas e acessórios", set()),
     "casa": ("Utilidades e casa", {
         "CARVAO", "FOSFORO", "ISQUEIRO", "PILHA", "LAMPADA", "GUARDANAPO",
         "ALUMINIO", "FILME PVC", "DESCARTAVEL", "PALITO", "VELA",
@@ -109,8 +111,17 @@ def categorizar(descricao: str) -> str:
     if not texto:
         return OUTROS
 
+    # 1) Pelo TIPO do produto, a palavra que diz o que ele é. Corrige a classe
+    #    de erro em que qualquer palavra decidia ("ÁGUA SANITÁRIA" -> bebida,
+    #    "DETERGENTE LIMÃO" -> hortifrúti). Ver padronizacao.py.
+    from .padronizacao import padronizar
+    pelo_tipo = padronizar(descricao).categoria
+    if pelo_tipo:
+        return pelo_tipo
+
+    # 2) Reserva: palavras-chave em qualquer posição, na ordem da tabela.
     for chave in CATEGORIAS:
-        if _padrao_da_categoria(chave).search(texto):
+        if CATEGORIAS[chave][1] and _padrao_da_categoria(chave).search(texto):
             return chave
 
     return OUTROS

@@ -187,6 +187,59 @@ def _consultar_nominatim(parametros: dict) -> Optional[tuple[float, float, str]]
         return None
 
 
+# De onde veio a última coordenada ("CEP (AwesomeAPI)", "rua no OpenStreetMap"...).
+# Só para diagnóstico: a tela de relocalização mostra, e assim dá para saber
+# qual serviço respondeu no servidor, onde não há console.
+ultima_fonte = ""
+
+
+def _registrar_fonte(fonte: str) -> None:
+    global ultima_fonte
+    ultima_fonte = fonte
+
+
+_PALAVRAS_FRACAS = {"DE", "DA", "DO", "DAS", "DOS", "E"}
+
+
+def _mesma_rua(encontrada: str, oficial: str) -> bool:
+    """
+    A rua que o serviço devolveu é a do endereço oficial?
+
+    Todas as palavras do nome oficial precisam estar no nome encontrado
+    ("GOIAS" casa com "Avenida Goiás"). Sem essa conferência, a busca por
+    Avenida Goiás aceitou o bairro Jardim Goiás, a 3 km dali.
+    """
+    from .produtos import normalizar
+    achadas = set(normalizar(encontrada).split())
+    exigidas = [w for w in normalizar(oficial).split() if w not in _PALAVRAS_FRACAS]
+    return bool(exigidas) and all(w in achadas for w in exigidas)
+
+
+def geocodificar_rua(tipo: str, logradouro: str, cidade: str = ""
+                     ) -> Optional[tuple[float, float, str]]:
+    """
+    Ponto na rua do endereço oficial (sem o número), conferindo o nome.
+
+    Serve quando o número exato não é achado e o serviço de CEP não responde.
+    Numa avenida longa o ponto pode ficar longe do número, mas fica NA rua
+    certa, e a precisão "rua" avisa isso na tela.
+    """
+    dados = _requisitar(NOMINATIM_BUSCA, {
+        "street": " ".join(p for p in [tipo, logradouro] if p),
+        **({"city": cidade} if cidade else {}),
+        "country": "Brasil", "countrycodes": "br", "format": "json",
+        "limit": 5, "addressdetails": 1,
+    }, tempo_limite=30) or []
+    for resultado in dados:
+        rua = (resultado.get("address") or {}).get("road", "")
+        if rua and _mesma_rua(rua, logradouro):
+            try:
+                return (float(resultado["lat"]), float(resultado["lon"]), "rua")
+            except (KeyError, ValueError):
+                continue
+    return None
+
+
 # Coordenadas do CEP. Nas capitais o CEP costuma ser de um TRECHO de rua, então
 # o ponto cai na rua e no bairro certos. Gratuito e sem chave.
 AWESOMEAPI_CEP = "https://cep.awesomeapi.com.br/json/{cep}"
@@ -229,14 +282,21 @@ def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
             **({"city": cidade} if cidade else {}),
         })
         if achado and achado[2] == "endereco":
+            _registrar_fonte("número exato no OpenStreetMap")
             return achado
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 
     achado = coordenadas_do_cep(cep_limpo)
     if achado:
+        _registrar_fonte("CEP (AwesomeAPI)")
         return achado
 
-    return _consultar_nominatim({"postalcode": cep_formatado, "country": "Brasil"})
+    if logradouro:
+        achado = geocodificar_rua(tipo_logradouro, logradouro, cidade)
+        if achado:
+            _registrar_fonte("rua no OpenStreetMap")
+            return achado
+    return None
 
 
 def geocodificar(endereco: str, cidade: str = "",
@@ -500,6 +560,7 @@ def localizar_estabelecimento(repositorio, estabelecimento,
     from .cnpj import ConsultaCNPJError, consultar as consultar_cnpj
 
     achado = None
+    _registrar_fonte("")
 
     # 1) Registro oficial do CNPJ: traz o CEP, que o cupom não tem.
     try:
@@ -521,9 +582,12 @@ def localizar_estabelecimento(repositorio, estabelecimento,
         )
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 
-    # 2) Sem CNPJ ou sem CEP, cai no endereço impresso na nota.
-    if achado is None:
+    # 2) Só sem registro do CNPJ cai no endereço impresso na nota. Com o
+    #    registro em mãos, é melhor não achar do que achar no lugar errado.
+    if achado is None and registro is None:
         achado = geocodificar(estabelecimento.endereco, cidade, uf)
+        if achado:
+            _registrar_fonte("endereço do cupom")
 
     if achado is None:
         return False

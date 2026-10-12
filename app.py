@@ -1079,7 +1079,9 @@ def localizar_mercados():
             return redirect(url_for("inicio"))
         if achou:
             repo.salvar()
-            flash(f"{estabelecimento.nome} relocalizado ({estabelecimento.precisao}).", "sucesso")
+            from tabao import mapa as _mapa
+            flash(f"{estabelecimento.nome} relocalizado ({estabelecimento.precisao}, "
+                  f"via {_mapa.ultima_fonte or '?'}).", "sucesso")
         else:
             flash(f"Não consegui localizar {estabelecimento.nome}.", "aviso")
         return redirect(url_for("inicio"))

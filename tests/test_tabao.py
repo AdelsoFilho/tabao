@@ -1707,3 +1707,11 @@ def test_carne_bovina_identifica_o_corte(descricao, corte):
 def test_cortes_diferentes_nao_se_juntam():
     assert padronizar("ACEM BOV KG").familia != padronizar("ALCATRA BOV KG").familia
     assert padronizar("PATINHO KG").familia == padronizar("PATINHO BOVINO RESF KG").familia
+
+
+def test_so_aceita_a_rua_do_endereco_oficial():
+    from tabao.mapa import _mesma_rua
+    assert _mesma_rua("Avenida Goiás", "GOIAS")
+    assert _mesma_rua("Avenida República do Líbano", "REPUBLICA DO LIBANO")
+    assert not _mesma_rua("Jardim Goiás", "AVENIDA DEPUTADO JAMEL CECILIO")
+    assert not _mesma_rua("Rua 27", "PORTUGAL")

@@ -280,6 +280,8 @@ def coordenadas_do_cep(cep: str) -> Optional[tuple[float, float, str]]:
 
 
 GOOGLE_GEOCODING = "https://maps.googleapis.com/maps/api/geocode/json"
+# Por que o Google não foi usado na última tentativa (sem chave, REQUEST_DENIED...).
+diagnostico_google = ""
 
 
 def geocodificar_google(tipo: str, logradouro: str, numero: str, bairro: str,
@@ -291,8 +293,13 @@ def geocodificar_google(tipo: str, logradouro: str, numero: str, bairro: str,
     tem: acha a porta. Só é usado se a rua devolvida for a do endereço
     oficial, a mesma conferência das outras fontes.
     """
+    global diagnostico_google
     chave = os.environ.get("GOOGLE_MAPS_KEY", "").strip()
-    if not chave or not logradouro:
+    if not chave:
+        diagnostico_google = "sem GOOGLE_MAPS_KEY no ambiente"
+        return None
+    if not logradouro:
+        diagnostico_google = "sem logradouro"
         return None
     endereco = ", ".join(p for p in [
         " ".join(x for x in [tipo, logradouro] if x),
@@ -304,8 +311,16 @@ def geocodificar_google(tipo: str, logradouro: str, numero: str, bairro: str,
             "address": endereco, "components": "country:BR", "language": "pt-BR",
             "key": chave,
         }, tempo_limite=20) or {}
-    except MapaError:
+    except MapaError as erro:
+        diagnostico_google = f"falha de rede: {str(erro)[:80]}"
         return None
+    status = dados.get("status", "?")
+    if status != "OK":
+        # REQUEST_DENIED, OVER_QUERY_LIMIT... A mensagem do Google explica
+        # (API não ativada, faturamento) e não contém a chave.
+        diagnostico_google = f"{status}: {dados.get('error_message', '')[:160]}"
+        return None
+    diagnostico_google = "nenhum resultado na rua oficial"
     for resultado in dados.get("results", []):
         partes = resultado.get("address_components", [])
         rua = next((c["long_name"] for c in partes if "route" in c.get("types", [])), "")

@@ -1728,3 +1728,16 @@ def test_trecho_da_avenida_no_bairro_oficial(monkeypatch):
     assert mapa.geocodificar_rua("AVENIDA", "GOIAS", "GOIANIA", "SET CENTRAL") == (-16.666, -49.260, "rua")
     # Sem bairro que case, fica o primeiro trecho da rua certa (nunca o bairro Jardim Goiás).
     assert mapa.geocodificar_rua("AVENIDA", "GOIAS", "GOIANIA", "VILA NOVA") == (-16.646, -49.265, "rua")
+
+
+def test_loja_pelo_nome_so_vale_na_rua_oficial(monkeypatch):
+    from tabao import mapa
+    lojas = [
+        {"lat": "-16.7146", "lon": "-49.2573", "address": {"road": "Rua 1034", "suburb": "Jardim das Esmeraldas"}},
+        {"lat": "-16.6611", "lon": "-49.2619", "address": {"road": "Avenida Goiás", "suburb": "Setor Central"}},
+        {"lat": "-16.7133", "lon": "-49.2344", "address": {"road": "Avenida I", "suburb": "Jardim Goiás"}},
+    ]
+    monkeypatch.setattr(mapa, "_requisitar", lambda *a, **k: lojas)
+    assert mapa.loja_na_rua("ATACADAO COSTA", "GOIAS", "GOIANIA", "SET CENTRAL") == (-16.6611, -49.2619, "endereco")
+    # Nenhuma loja da rede na rua oficial: não arrisca.
+    assert mapa.loja_na_rua("ATACADAO COSTA", "PORTUGAL", "GOIANIA", "SETOR MARISTA") is None

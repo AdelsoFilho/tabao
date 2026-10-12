@@ -278,9 +278,37 @@ def coordenadas_do_cep(cep: str) -> Optional[tuple[float, float, str]]:
         return None
 
 
+def loja_na_rua(nome: str, logradouro: str, cidade: str = "", bairro: str = ""
+                ) -> Optional[tuple[float, float, str]]:
+    """
+    A própria loja no OpenStreetMap, conferida pelo endereço oficial.
+
+    O nome sozinho não basta (foi o que pôs o CNPJ do Pão de Açúcar num ponto
+    "Itaóca", e redes têm várias lojas). Aqui o nome só acha candidatos, e vale
+    o que estiver NA RUA do endereço oficial; havendo bairro, no bairro também.
+    """
+    if not nome or not logradouro:
+        return None
+    dados = _requisitar(NOMINATIM_BUSCA, {
+        "q": ", ".join(p for p in [nome, cidade] if p),
+        "countrycodes": "br", "format": "json", "limit": 10, "addressdetails": 1,
+    }, tempo_limite=30) or []
+    lojas = [r for r in dados
+             if _mesma_rua((r.get("address") or {}).get("road", ""), logradouro)]
+    if bairro:
+        lojas = [r for r in lojas if _mesmo_bairro(r.get("address") or {}, bairro)] or (
+            lojas if len(lojas) == 1 else [])
+    if len(lojas) != 1:
+        return None            # nenhuma ou ambígua: melhor não arriscar
+    try:
+        return (float(lojas[0]["lat"]), float(lojas[0]["lon"]), "endereco")
+    except (KeyError, ValueError):
+        return None
+
+
 def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
-                         cidade: str = "", tipo_logradouro: str = "", bairro: str = ""
-                         ) -> Optional[tuple[float, float, str]]:
+                         cidade: str = "", tipo_logradouro: str = "", bairro: str = "",
+                         nome: str = "") -> Optional[tuple[float, float, str]]:
     """
     Geocodifica o endereço oficial do CNPJ.
 
@@ -304,6 +332,13 @@ def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
         })
         if achado and achado[2] == "endereco":
             _registrar_fonte("número exato no OpenStreetMap")
+            return achado
+        time.sleep(INTERVALO_ENTRE_CHAMADAS)
+
+    if nome:
+        achado = loja_na_rua(nome, logradouro, cidade, bairro)
+        if achado:
+            _registrar_fonte("loja no OpenStreetMap, na rua oficial")
             return achado
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 
@@ -599,7 +634,7 @@ def localizar_estabelecimento(repositorio, estabelecimento,
 
         achado = geocodificar_por_cep(
             registro.cep, registro.logradouro, registro.numero, registro.municipio,
-            registro.tipo_logradouro, registro.bairro,
+            registro.tipo_logradouro, registro.bairro, registro.nome_exibicao,
         )
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 

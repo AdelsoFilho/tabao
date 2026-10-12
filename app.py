@@ -32,10 +32,9 @@ from tabao.categorias import categorizar
 from tabao.chave import ChaveInvalidaError, interpretar
 from tabao.produtos import CESTA_BASICA, classificar, nome_do_item
 from tabao.qrcode_nfce import QRCodeInvalidoError, interpretar_url, ler_de_imagem
-from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, casar_com_estabelecimentos,
-                        importar_area, locais_dos_estabelecimentos,
-                        localizar_estabelecimento, localizar_estabelecimentos,
-                        mesclar)
+from tabao.mapa import (CacheMapa, MapaError, TIPOS_OSM, importar_area,
+                        locais_dos_estabelecimentos, localizar_estabelecimento,
+                        localizar_estabelecimentos)
 from tabao.rota import (CONSUMO_PADRAO_KM_L, PRECO_COMBUSTIVEL_PADRAO, avaliar,
                        calcular_trajeto, compensa_ir, custo_do_trajeto)
 from tabao.banco import BancoError, criar_repositorio
@@ -811,21 +810,15 @@ def _mercados_com_precos(repo, cache=None) -> list:
     """
     Os mercados que aparecem no mapa: com preços na base e com posição.
 
-    Única fonte para o mapa E para o "vale a pena ir?". Antes a comparação só
-    via os mercados localizados pelo endereço do cupom e ignorava os achados
-    pelo OpenStreetMap: o mapa mostrava 6 mercados e a conta enxergava 1.
-    """
-    cache = cache or CacheMapa(MAPA)
-    # O casamento entre o nome do cupom e o do mapa é feito aqui, e não no
-    # arquivo: assim o dado embarcado continua válido conforme a base cresce.
-    casar_com_estabelecimentos(cache.locais, repo.estabelecimentos())
+    Única fonte para o mapa E para o "vale a pena ir?".
 
-    # Duas fontes: os mercados do OpenStreetMap e os que vieram dos cupons.
-    # O OSM não conhece todo supermercado brasileiro, então o endereço da nota
-    # completa o mapa. Só entram os que têm preços: um ponto sem preço não
-    # ajuda a decidir onde comprar e só polui o mapa.
-    todos = mesclar(cache.locais, locais_dos_estabelecimentos(repo))
-    return [local for local in todos if local.cnpj]
+    A posição vem SÓ do endereço oficial do CNPJ (localizar_estabelecimento).
+    Antes, um ponto do OpenStreetMap era dado como o mercado do cupom quando
+    os nomes tinham uma palavra em comum: o CNPJ do Pão de Açúcar foi parar
+    num ponto chamado "Itaóca Distribuição", o do Assaí numa "Distribuidora"
+    qualquer, e os 7 mercados casados assim estavam no lugar errado.
+    """
+    return [local for local in locais_dos_estabelecimentos(repo) if local.cnpj]
 
 
 @app.route("/")

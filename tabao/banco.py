@@ -432,8 +432,9 @@ class RepositorioPostgres(_UsuariosPostgres):
         return [e for e in self.registro_estabelecimentos.values() if e.latitude is not None]
 
     def estabelecimentos_sem_local(self) -> list[Estabelecimento]:
+        # Sem exigir endereço do cupom: a localização parte do CNPJ.
         return [e for e in self.registro_estabelecimentos.values()
-                if e.latitude is None and e.endereco]
+                if e.latitude is None]
 
     def atualizar_estabelecimento(self, estabelecimento: Estabelecimento) -> None:
         """

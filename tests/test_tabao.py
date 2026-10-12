@@ -1630,3 +1630,26 @@ def test_granel_nao_se_mistura_com_embalagem():
 def test_linhas_diferentes_da_mesma_marca_nao_se_juntam():
     assert padronizar("CD COLG TOT 90G ANTI").familia != padronizar("COLG CR PRO ALIV L3P2").familia
     assert padronizar("SAB BARRA GLIC PHEBO").familia != padronizar("SBT PHEBO 90G ROSAS").familia
+
+
+def test_mapa_nao_casa_mercado_por_nome_com_o_openstreetmap(cliente_web, cupom_real):
+    # O cupom do CEMA sem localização própria: mesmo havendo um "CEMA" no
+    # OpenStreetMap embarcado, o mercado não pode ir para aquele ponto.
+    repo = Repositorio(cliente_web.BASE)
+    repo.registrar_cupom(cupom_real)
+    repo.salvar()
+    assert cliente_web._mercados_com_precos(Repositorio(cliente_web.BASE)) == []
+
+    mercado = repo.registro_estabelecimentos[cupom_real.estabelecimento.cnpj]
+    mercado.latitude, mercado.longitude, mercado.precisao = -16.6537, -49.2532, "cep"
+    repo.atualizar_estabelecimento(mercado)
+    repo.salvar()
+    [ponto] = cliente_web._mercados_com_precos(Repositorio(cliente_web.BASE))
+    assert (ponto.latitude, ponto.longitude) == (-16.6537, -49.2532)
+
+
+def test_mercado_sem_endereco_no_cupom_ainda_e_localizavel(tmp_path, cupom_real):
+    cupom_real.estabelecimento.endereco = ""
+    repo = Repositorio(tmp_path / "precos.json")
+    repo.registrar_cupom(cupom_real)
+    assert [e.cnpj for e in repo.estabelecimentos_sem_local()] == [cupom_real.estabelecimento.cnpj]

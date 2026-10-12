@@ -274,8 +274,8 @@ class Repositorio:
         return [e for e in self._estabelecimentos.values() if e.localizado]
 
     def estabelecimentos_sem_local(self) -> list[Estabelecimento]:
-        return [e for e in self._estabelecimentos.values()
-                if not e.localizado and e.endereco]
+        # Sem exigir endereço do cupom: a localização parte do CNPJ.
+        return [e for e in self._estabelecimentos.values() if not e.localizado]
 
     def atualizar_estabelecimento(self, estabelecimento: Estabelecimento) -> None:
         """

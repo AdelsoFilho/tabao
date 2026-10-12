@@ -1059,8 +1059,31 @@ def importar_mapa():
 
 @app.route("/mapa/localizar", methods=["POST"])
 def localizar_mercados():
-    """Geocodifica os mercados da base que ainda não estão no mapa."""
+    """
+    Geocodifica os mercados da base que ainda não estão no mapa.
+
+    Com ?cnpj=..., refaz a localização daquele mercado mesmo que ele já tenha
+    posição: serve para corrigir um ponto errado depois que a busca melhora.
+    Um por vez cabe folgado no tempo máximo da função.
+    """
     repo = repositorio()
+    cnpj = "".join(c for c in request.args.get("cnpj", "") if c.isdigit())
+    if cnpj:
+        estabelecimento = repo.registro_estabelecimentos.get(cnpj)
+        if estabelecimento is None:
+            abort(404)
+        try:
+            achou = localizar_estabelecimento(repo, estabelecimento)
+        except MapaError as erro:
+            flash(str(erro), "erro")
+            return redirect(url_for("inicio"))
+        if achou:
+            repo.salvar()
+            flash(f"{estabelecimento.nome} relocalizado ({estabelecimento.precisao}).", "sucesso")
+        else:
+            flash(f"Não consegui localizar {estabelecimento.nome}.", "aviso")
+        return redirect(url_for("inicio"))
+
     pendentes = len(repo.estabelecimentos_sem_local())
 
     if not pendentes:

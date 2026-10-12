@@ -187,13 +187,34 @@ def _consultar_nominatim(parametros: dict) -> Optional[tuple[float, float, str]]
         return None
 
 
-def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
-                         cidade: str = "") -> Optional[tuple[float, float, str]]:
-    """
-    Geocodifica usando o CEP, que delimita muito melhor que o nome da rua.
+# Coordenadas do CEP. Nas capitais o CEP costuma ser de um TRECHO de rua, então
+# o ponto cai na rua e no bairro certos. Gratuito e sem chave.
+AWESOMEAPI_CEP = "https://cep.awesomeapi.com.br/json/{cep}"
 
-    Tenta primeiro a consulta estruturada com rua e número; se falhar, usa só
-    o CEP, cujo centroide fica dentro da quadra correta.
+
+def coordenadas_do_cep(cep: str) -> Optional[tuple[float, float, str]]:
+    """(lat, lon, "rua") do CEP pela AwesomeAPI, ou None."""
+    cep_limpo = "".join(c for c in (cep or "") if c.isdigit())
+    if len(cep_limpo) != 8:
+        return None
+    try:
+        dados = _requisitar(AWESOMEAPI_CEP.format(cep=cep_limpo), {}, tempo_limite=20)
+        return (float(dados["lat"]), float(dados["lng"]), "rua")
+    except (MapaError, KeyError, TypeError, ValueError):
+        return None
+
+
+def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
+                         cidade: str = "", tipo_logradouro: str = ""
+                         ) -> Optional[tuple[float, float, str]]:
+    """
+    Geocodifica o endereço oficial do CNPJ.
+
+    1. Endereço exato (tipo + rua + número + CEP) no Nominatim: só vale se ele
+       achar o PRÉDIO. O tipo do logradouro importa: sem "Avenida", a busca
+       por "2151 GOIAS" achava o bairro Jardim Goiás, não a Avenida Goiás.
+    2. Coordenada do CEP (AwesomeAPI): cai no trecho certo da rua.
+    3. Por último, o CEP no Nominatim, que no Brasil é bem menos confiável.
     """
     cep_limpo = "".join(c for c in (cep or "") if c.isdigit())
     if len(cep_limpo) != 8:
@@ -201,8 +222,8 @@ def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
 
     cep_formatado = f"{cep_limpo[:5]}-{cep_limpo[5:]}"
 
-    if logradouro:
-        rua = f"{numero} {logradouro}".strip()
+    if logradouro and numero and numero.upper() not in ("S/N", "SN", "0"):
+        rua = " ".join(p for p in [numero, tipo_logradouro, logradouro] if p)
         achado = _consultar_nominatim({
             "street": rua, "postalcode": cep_formatado, "country": "Brasil",
             **({"city": cidade} if cidade else {}),
@@ -210,6 +231,10 @@ def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
         if achado and achado[2] == "endereco":
             return achado
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
+
+    achado = coordenadas_do_cep(cep_limpo)
+    if achado:
+        return achado
 
     return _consultar_nominatim({"postalcode": cep_formatado, "country": "Brasil"})
 
@@ -491,7 +516,8 @@ def localizar_estabelecimento(repositorio, estabelecimento,
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 
         achado = geocodificar_por_cep(
-            registro.cep, registro.logradouro, registro.numero, registro.municipio
+            registro.cep, registro.logradouro, registro.numero, registro.municipio,
+            registro.tipo_logradouro,
         )
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 

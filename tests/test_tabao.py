@@ -1653,3 +1653,57 @@ def test_mercado_sem_endereco_no_cupom_ainda_e_localizavel(tmp_path, cupom_real)
     repo = Repositorio(tmp_path / "precos.json")
     repo.registrar_cupom(cupom_real)
     assert [e.cnpj for e in repo.estabelecimentos_sem_local()] == [cupom_real.estabelecimento.cnpj]
+
+
+def test_relocalizar_um_mercado_pelo_cnpj(cliente_web, monkeypatch, cupom_real):
+    repo = Repositorio(cliente_web.BASE)
+    repo.registrar_cupom(cupom_real)
+    mercado = repo.registro_estabelecimentos[cupom_real.estabelecimento.cnpj]
+    mercado.latitude, mercado.longitude, mercado.precisao = -16.70, -49.29, "rua"   # ponto errado
+    repo.atualizar_estabelecimento(mercado)
+    repo.salvar()
+
+    def localizar(repo, estabelecimento, *a, **k):
+        estabelecimento.latitude, estabelecimento.longitude = -16.6537, -49.2532
+        estabelecimento.precisao = "endereco"
+        repo.atualizar_estabelecimento(estabelecimento)
+        return True
+
+    monkeypatch.setattr(cliente_web, "localizar_estabelecimento", localizar)
+    cnpj = cupom_real.estabelecimento.cnpj
+    cliente_web.app.test_client().post(f"/mapa/localizar?cnpj={cnpj}")
+    corrigido = Repositorio(cliente_web.BASE).registro_estabelecimentos[cnpj]
+    assert (corrigido.latitude, corrigido.longitude) == (-16.6537, -49.2532)
+    assert cliente_web.app.test_client().post("/mapa/localizar?cnpj=999").status_code == 404
+
+
+def test_tipo_do_logradouro_vai_na_busca(monkeypatch):
+    from tabao import mapa
+    pedidos = []
+    monkeypatch.setattr(mapa, "_consultar_nominatim", lambda p: pedidos.append(p) or None)
+    monkeypatch.setattr(mapa, "coordenadas_do_cep", lambda cep: (-16.67, -49.25, "rua"))
+    monkeypatch.setattr(mapa, "INTERVALO_ENTRE_CHAMADAS", 0)
+    achado = mapa.geocodificar_por_cep("74010010", "GOIAS", "2151", "GOIANIA", "AVENIDA")
+    assert pedidos[0]["street"] == "2151 AVENIDA GOIAS"
+    assert achado == (-16.67, -49.25, "rua")
+
+
+@pytest.mark.parametrize("descricao, corte", [
+    ("ACEM BOV KG", "Acém"),
+    ("PATINHO BOVINO RESF KG", "Patinho"),
+    ("CX MOLE KG", "Coxão mole"),
+    ("CONTRA FILE KG", "Contrafilé"),
+    ("FILE DE COSTELA BO KG", "Costela bovina"),
+    ("MUSC BOV PED KG", "Músculo"),
+    ("PICANHA BOV KG", "Picanha"),
+    ("CARNE MOIDA PATINHO KG", "Carne moída"),
+    ("CARNE BOVINA KG", "Carne bovina (corte não informado)"),
+])
+def test_carne_bovina_identifica_o_corte(descricao, corte):
+    padrao = padronizar(descricao)
+    assert padrao.tipo == corte and padrao.categoria == "carnes"
+
+
+def test_cortes_diferentes_nao_se_juntam():
+    assert padronizar("ACEM BOV KG").familia != padronizar("ALCATRA BOV KG").familia
+    assert padronizar("PATINHO KG").familia == padronizar("PATINHO BOVINO RESF KG").familia

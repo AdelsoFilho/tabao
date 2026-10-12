@@ -58,6 +58,7 @@ class RegistroCNPJ:
     municipio: str
     uf: str
     situacao: str = ""
+    tipo_logradouro: str = ""      # "AVENIDA", "RUA"... (a Receita separa do nome)
 
     @property
     def ativo(self) -> bool:
@@ -145,4 +146,5 @@ def consultar(cnpj: str, tempo_limite: int = 30) -> Optional[RegistroCNPJ]:
         municipio=(dados.get("municipio") or "").strip(),
         uf=(dados.get("uf") or "").strip(),
         situacao=(dados.get("descricao_situacao_cadastral") or "").strip(),
+        tipo_logradouro=(dados.get("descricao_tipo_de_logradouro") or "").strip(),
     )

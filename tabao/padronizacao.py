@@ -78,6 +78,13 @@ _ABREVIACOES = {
     "REFRES": "REFRESCO", "RESF": "RESFRIADO", "SBT": "SABONETE", "SH": "SHAMPOO",
     "SANIT": "SANITARIA", "TIROL": "TIROLEZ", "TR": "TRADICIONAL", "TRAD": "TRADICIONAL",
     "TOT": "TOTAL", "PRO ALIV": "PRO ALIVIO",
+    # cortes bovinos
+    "CX MOLE": "COXAO MOLE", "COX MOLE": "COXAO MOLE", "CX DURO": "COXAO DURO",
+    "COX DURO": "COXAO DURO", "CTRA FILE": "CONTRA FILE", "CONTRAFILE": "CONTRA FILE",
+    "CONTRA FILET": "CONTRA FILE", "FIL MIGNON": "FILE MIGNON", "FILET MIGNON": "FILE MIGNON",
+    "CH DENTRO": "CHA DE DENTRO", "CH FORA": "CHA DE FORA", "PEITO BOV": "PEITO BOVINO",
+    "MUSC": "MUSCULO", "ALC": "ALCATRA", "PALET": "PALETA", "BOV": "BOVINO", "BO": "BOVINO",
+    "MOID": "MOIDA", "FRALD": "FRALDINHA", "MAM": "MAMINHA", "PIC": "PICANHA",
     "CONG": "CONGELADO", "COC": "COCO", "NAT": "NATURAL", "LIQ": "LIQUIDO", "CL": "CLEAR", "CAJ": "CAJU", "GOI": "GOIABA", "GUA": "GUARANA", "BCO": "BRANCO", "SEMI": "SEMIDESNATADO",
     "CRF": "CARREFOUR", "CRFO": "CARREFOUR", "CARREF": "CARREFOUR", "CARREFOU": "CARREFOUR",
     "MIRTILO": "MIRTILO", "BERINGELA": "BERINJELA", "PICOLE": "PICOLE",
@@ -173,7 +180,22 @@ _TIPOS: dict[str, tuple[str, str]] = {
     "COXA E SOBRECOXA": ("Coxa e sobrecoxa", "carnes"), "COXINHA DA ASA": ("Coxinha da asa", "carnes"),
     "COXINHA DE FRANGO": ("Coxinha da asa", "carnes"), "MEIO ASA": ("Meio da asa", "carnes"),
     "LINGUICA": ("Linguiça", "carnes"), "BACON": ("Bacon", "carnes"),
-    "LOMBO SUINO": ("Lombo suíno", "carnes"), "FILE DE COSTELA": ("Costela", "carnes"),
+    "LOMBO SUINO": ("Lombo suíno", "carnes"),
+    # Carne bovina: cada CORTE é um produto. Acém e alcatra custam coisas
+    # bem diferentes; tratar os dois como "carne" falsearia a comparação.
+    "ACEM": ("Acém", "carnes"), "PATINHO": ("Patinho", "carnes"),
+    "COXAO MOLE": ("Coxão mole", "carnes"), "COXAO DURO": ("Coxão duro", "carnes"),
+    "MUSCULO": ("Músculo", "carnes"), "ALCATRA": ("Alcatra", "carnes"),
+    "PICANHA": ("Picanha", "carnes"), "CONTRA FILE": ("Contrafilé", "carnes"),
+    "FILE MIGNON": ("Filé mignon", "carnes"), "FRALDINHA": ("Fraldinha", "carnes"),
+    "MAMINHA": ("Maminha", "carnes"), "LAGARTO": ("Lagarto", "carnes"),
+    "CHA DE DENTRO": ("Chã de dentro", "carnes"), "CHA DE FORA": ("Chã de fora", "carnes"),
+    "PALETA": ("Paleta bovina", "carnes"), "PEITO BOVINO": ("Peito bovino", "carnes"),
+    "COSTELA": ("Costela bovina", "carnes"), "FILE DE COSTELA": ("Costela bovina", "carnes"),
+    "CARNE MOIDA": ("Carne moída", "carnes"), "CARNE SECA": ("Carne seca", "carnes"),
+    "CARNE BOVINA MOIDA": ("Carne moída", "carnes"),
+    "CARNE BOVINA": ("Carne bovina (corte não informado)", "carnes"),
+    "CARNE": ("Carne bovina (corte não informado)", "carnes"),
     "CUPIM": ("Cupim", "carnes"), "FRANGO": ("Frango", "carnes"), "TIRAS DE TILAPIA": ("Tilápia", "carnes"),
     # hortifrúti
     "CEBOLA": ("Cebola", "hortifruti"), "TOMATE": ("Tomate", "hortifruti"),
@@ -211,6 +233,11 @@ _GENERICOS = {
     "Água mineral", "Cebola", "Tomate", "Alho", "Batata", "Banana", "Laranja",
     "Melão", "Pimentão", "Pão francês", "Lombo suíno", "Ovos", "Coxa e sobrecoxa",
     "Berinjela", "Uva",
+    # cortes bovinos: vendidos a granel, o preço varia pela loja
+    "Acém", "Patinho", "Coxão mole", "Coxão duro", "Músculo", "Alcatra", "Picanha",
+    "Contrafilé", "Filé mignon", "Fraldinha", "Maminha", "Lagarto", "Chã de dentro",
+    "Chã de fora", "Paleta bovina", "Peito bovino", "Costela bovina", "Carne moída",
+    "Cupim",
 }
 
 # --------------------------------------------------------------------------

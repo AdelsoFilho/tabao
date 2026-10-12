@@ -215,29 +215,50 @@ def _mesma_rua(encontrada: str, oficial: str) -> bool:
     return bool(exigidas) and all(w in achadas for w in exigidas)
 
 
-def geocodificar_rua(tipo: str, logradouro: str, cidade: str = ""
+def geocodificar_rua(tipo: str, logradouro: str, cidade: str = "", bairro: str = ""
                      ) -> Optional[tuple[float, float, str]]:
     """
     Ponto na rua do endereço oficial (sem o número), conferindo o nome.
 
     Serve quando o número exato não é achado e o serviço de CEP não responde.
-    Numa avenida longa o ponto pode ficar longe do número, mas fica NA rua
-    certa, e a precisão "rua" avisa isso na tela.
+    Uma avenida longa vem em vários trechos (a Avenida Goiás, em 10). Entre os
+    trechos da rua certa, vale o que fica no BAIRRO do endereço oficial; sem
+    isso o Atacadão Costa (Setor Central) caía no Residencial Morumbi.
     """
     dados = _requisitar(NOMINATIM_BUSCA, {
         "street": " ".join(p for p in [tipo, logradouro] if p),
         **({"city": cidade} if cidade else {}),
         "country": "Brasil", "countrycodes": "br", "format": "json",
-        "limit": 5, "addressdetails": 1,
+        "limit": 15, "addressdetails": 1,
     }, tempo_limite=30) or []
-    for resultado in dados:
-        rua = (resultado.get("address") or {}).get("road", "")
-        if rua and _mesma_rua(rua, logradouro):
-            try:
-                return (float(resultado["lat"]), float(resultado["lon"]), "rua")
-            except (KeyError, ValueError):
-                continue
+    trechos = [r for r in dados
+               if _mesma_rua((r.get("address") or {}).get("road", ""), logradouro)]
+    if bairro:
+        no_bairro = [r for r in trechos if _mesmo_bairro(r.get("address") or {}, bairro)]
+        trechos = no_bairro or trechos
+    for resultado in trechos:
+        try:
+            return (float(resultado["lat"]), float(resultado["lon"]), "rua")
+        except (KeyError, ValueError):
+            continue
     return None
+
+
+_BAIRRO_ABREV = {"SET": "SETOR", "ST": "SETOR", "JD": "JARDIM", "JARD": "JARDIM",
+                 "VI": "VILA", "VL": "VILA", "RES": "RESIDENCIAL", "PQ": "PARQUE",
+                 "CHAC": "CHACARAS", "FAZ": "FAZENDA"}
+
+
+def _mesmo_bairro(endereco: dict, bairro: str) -> bool:
+    """O trecho devolvido fica no bairro oficial? ("SET CENTRAL" = "Setor Central")"""
+    from .produtos import normalizar
+    exigidas = [_BAIRRO_ABREV.get(w, w) for w in normalizar(bairro).split()
+                if w not in _PALAVRAS_FRACAS]
+    for campo in ("suburb", "neighbourhood", "city_district", "quarter"):
+        achadas = set(normalizar(endereco.get(campo, "")).split())
+        if exigidas and achadas and all(w in achadas for w in exigidas):
+            return True
+    return False
 
 
 # Coordenadas do CEP. Nas capitais o CEP costuma ser de um TRECHO de rua, então
@@ -258,7 +279,7 @@ def coordenadas_do_cep(cep: str) -> Optional[tuple[float, float, str]]:
 
 
 def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
-                         cidade: str = "", tipo_logradouro: str = ""
+                         cidade: str = "", tipo_logradouro: str = "", bairro: str = ""
                          ) -> Optional[tuple[float, float, str]]:
     """
     Geocodifica o endereço oficial do CNPJ.
@@ -292,7 +313,7 @@ def geocodificar_por_cep(cep: str, logradouro: str = "", numero: str = "",
         return achado
 
     if logradouro:
-        achado = geocodificar_rua(tipo_logradouro, logradouro, cidade)
+        achado = geocodificar_rua(tipo_logradouro, logradouro, cidade, bairro)
         if achado:
             _registrar_fonte("rua no OpenStreetMap")
             return achado
@@ -578,7 +599,7 @@ def localizar_estabelecimento(repositorio, estabelecimento,
 
         achado = geocodificar_por_cep(
             registro.cep, registro.logradouro, registro.numero, registro.municipio,
-            registro.tipo_logradouro,
+            registro.tipo_logradouro, registro.bairro,
         )
         time.sleep(INTERVALO_ENTRE_CHAMADAS)
 

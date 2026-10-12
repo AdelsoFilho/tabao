@@ -1715,3 +1715,16 @@ def test_so_aceita_a_rua_do_endereco_oficial():
     assert _mesma_rua("Avenida República do Líbano", "REPUBLICA DO LIBANO")
     assert not _mesma_rua("Jardim Goiás", "AVENIDA DEPUTADO JAMEL CECILIO")
     assert not _mesma_rua("Rua 27", "PORTUGAL")
+
+
+def test_trecho_da_avenida_no_bairro_oficial(monkeypatch):
+    from tabao import mapa
+    trechos = [
+        {"lat": "-16.646", "lon": "-49.265", "address": {"road": "Avenida Goiás", "suburb": "Residencial Morumbi"}},
+        {"lat": "-16.666", "lon": "-49.260", "address": {"road": "Avenida Goiás", "suburb": "Setor Central"}},
+        {"lat": "-16.700", "lon": "-49.230", "address": {"road": "Rua Goiás", "suburb": "Jardim Goiás"}},
+    ]
+    monkeypatch.setattr(mapa, "_requisitar", lambda *a, **k: trechos)
+    assert mapa.geocodificar_rua("AVENIDA", "GOIAS", "GOIANIA", "SET CENTRAL") == (-16.666, -49.260, "rua")
+    # Sem bairro que case, fica o primeiro trecho da rua certa (nunca o bairro Jardim Goiás).
+    assert mapa.geocodificar_rua("AVENIDA", "GOIAS", "GOIANIA", "VILA NOVA") == (-16.646, -49.265, "rua")

@@ -126,11 +126,9 @@ def _chaves(precos: list[PrecoObservado]) -> list[str]:
             tamanho = padrao.tamanho
             if tamanho is None and len(tamanhos[padrao.familia]) == 1:
                 tamanho = next(iter(tamanhos[padrao.familia]))
-            # Só junta preços na mesma unidade: com o peso na descrição o preço
-            # é gravado por kg/l ("un. padrão"); sem ele, por embalagem. Juntar
-            # os dois compararia R$ 1,49 a bala com R$ 50,55 o quilo da bala.
-            unidade = "padrao" if p.unidade == "un. padrão" else (p.unidade or "").upper()
-            chaves.append(f"{padrao.familia}|{unidade}|{tamanho or '?'}")
+            # Granel (preço do quilo) não se mistura com embalagem (preço da
+            # unidade): "Tomate por kg" e "Tomate bandeja 500 g" são outra conta.
+            chaves.append(f"{padrao.familia}|{p.unidade_no_cupom}|{tamanho or '?'}")
         else:
             chaves.append(normalizar(p.descricao_original))
 
@@ -180,7 +178,7 @@ def agrupar_produtos(precos: Iterable[PrecoObservado],
             ofertas.append(Oferta(
                 cnpj=cnpj,
                 mercado=nomes.get(cnpj) or nome_amigavel(recente.nome_estabelecimento),
-                preco=recente.preco, unidade=recente.unidade,
+                preco=recente.preco_no_cupom, unidade=recente.unidade_no_cupom,
                 observado_em=recente.observado_em, vezes=len(lista),
             ))
         ofertas.sort(key=lambda o: o.preco)

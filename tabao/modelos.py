@@ -159,6 +159,32 @@ class PrecoObservado:
     def da_cesta(self) -> bool:
         return self.item_cesta is not None
 
+    @property
+    def por_peso(self) -> bool:
+        """Vendido a granel: o próprio cupom traz o preço do quilo."""
+        return (self.unidade or "").strip().upper() in ("KG", "K", "KGS")
+
+    @property
+    def preco_no_cupom(self) -> float:
+        """
+        O preço como aparece no cupom: o da embalagem, ou o do quilo a granel.
+
+        Quando a descrição traz o peso ("ARROZ 5KG"), `preco` é gravado por
+        quilo/litro, para o cálculo da cesta básica (que mede quantidades
+        mensais). Para mostrar ao usuário vale o que ele pagou: a conta é
+        desfeita multiplicando pelo tamanho da embalagem.
+        """
+        if self.unidade == "un. padrão":
+            from .produtos import extrair_embalagem
+            embalagem = extrair_embalagem(self.descricao_original)
+            if embalagem:
+                return round(self.preco * embalagem[0], 2)
+        return self.preco
+
+    @property
+    def unidade_no_cupom(self) -> str:
+        return "kg" if self.por_peso else "un."
+
     def para_dicionario(self) -> dict:
         dados = asdict(self)
         dados["observado_em"] = self.observado_em.isoformat()

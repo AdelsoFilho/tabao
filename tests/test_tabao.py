@@ -1602,16 +1602,31 @@ def test_nome_padronizado_legivel():
     assert padronizar("PAPEL HIG FD MAX 30M LV24PG21 NEUTRO").tamanho is None   # 30 metros
 
 
-def test_catalogo_so_junta_precos_na_mesma_unidade():
+def test_catalogo_mostra_e_compara_o_preco_do_cupom():
     precos = [
         _obs("BALA DURA HALLS CERE", "A", 1.49, 1),
         _obs("BALA HALLS 27,5GR PQ CEREJA 2.0", "B", 50.55, 2),
         _obs("BEB ENERG EXTRA POWER TRAD PET 2L", "C", 5.50, 3),
         _obs("EN EX POW TR 2l UN", "D", 5.45, 4),
     ]
-    precos[1].unidade = "un. padrão"          # gravado por kg
+    precos[1].unidade = "un. padrão"          # gravado por kg: 50,55 x 0,0275 kg
     grupos = agrupar_produtos(precos)
     extra = [g for g in grupos if "Extra Power" in g.descricao]
-    halls = [g for g in grupos if "Halls" in g.descricao]
+    [halls] = [g for g in grupos if "Halls" in g.descricao]
     assert len(extra) == 1 and extra[0].mercados == 2
-    assert len(halls) == 2 and all(g.mercados == 1 for g in halls)
+    # Os dois na base do cupom: o preço do pacote, não o do quilo.
+    assert sorted(o.preco for o in halls.ofertas) == [1.39, 1.49]
+    assert all(o.unidade == "un." for o in halls.ofertas)
+
+
+def test_granel_nao_se_mistura_com_embalagem():
+    precos = [_obs("CEBOLA UNIAO kg", "A", 7.99, 1), _obs("CEBOLA CRFO KG", "B", 8.99, 2)]
+    for p in precos:
+        p.unidade = "KG"
+    [cebola] = agrupar_produtos(precos)
+    assert cebola.mercados == 2 and cebola.ofertas[0].unidade == "kg"
+
+
+def test_linhas_diferentes_da_mesma_marca_nao_se_juntam():
+    assert padronizar("CD COLG TOT 90G ANTI").familia != padronizar("COLG CR PRO ALIV L3P2").familia
+    assert padronizar("SAB BARRA GLIC PHEBO").familia != padronizar("SBT PHEBO 90G ROSAS").familia
